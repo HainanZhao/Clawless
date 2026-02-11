@@ -93,6 +93,8 @@ npm install -g pm2
 pm2 start ecosystem.config.json
 ```
 
+PM2 will automatically create the `logs/` directory for log files.
+
 3. View logs:
 ```bash
 pm2 logs telegram-gemini-bridge

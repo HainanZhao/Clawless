@@ -45,11 +45,8 @@ bot.on('text', async (ctx) => {
       prompt: ctx.message.text,
     });
 
-    let tokenCount = 0;
-    
     for await (const delta of textStream) {
       fullResponse += delta;
-      tokenCount++;
       
       const now = Date.now();
       const timeSinceLastUpdate = now - (lastUpdateTime.get(messageId) || 0);
@@ -66,10 +63,8 @@ bot.on('text', async (ctx) => {
           );
           lastUpdateTime.set(messageId, now);
         } catch (editError) {
-          // Ignore rate limit errors, we'll catch up on next update
-          if (editError.description?.includes('message is not modified')) {
-            // Message hasn't changed enough, skip
-          } else {
+          // Ignore "message is not modified" errors
+          if (!editError.description?.includes('message is not modified')) {
             console.error('Error updating message:', editError.message);
           }
         }
@@ -93,8 +88,6 @@ bot.on('text', async (ctx) => {
     
     // Cleanup
     lastUpdateTime.delete(messageId);
-    
-    console.log(`Processed message with ${tokenCount} tokens`);
     
   } catch (error) {
     console.error('Error processing message:', error);
