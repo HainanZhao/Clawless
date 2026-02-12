@@ -5,11 +5,11 @@ A bridge that connects a Telegram bot to the Gemini CLI using the Agent Communic
 ## Features
 
 - 🤖 **Telegram Bot Interface**: Interact with Gemini CLI through Telegram
-- 🔄 **Real-time Streaming**: Messages stream back to Telegram with live updates
+- ⌨️ **Typing Status UX**: Shows Telegram typing indicator while Gemini is processing
 - 🛠️ **Rich Tool Support**: Leverages MCP (Model Context Protocol) servers connected to Gemini CLI
 - 🔒 **Privacy**: Runs on your hardware, you control data flow
 - 💾 **Persistent Context**: Maintains local session unlike standard API calls
-- ⚡ **Rate Limit Protection**: Smart message buffering to respect Telegram API limits
+- 📬 **Sequential Queueing**: Processes one message at a time to avoid overlap and races
 
 ## Architecture
 
@@ -23,7 +23,7 @@ A bridge that connects a Telegram bot to the Gemini CLI using the Agent Communic
 The bridge:
 1. Receives messages from Telegram users
 2. Forwards them to the Gemini CLI via ACP (Agent Communication Protocol)
-3. Streams responses back to Telegram in real-time
+3. Shows typing status, then sends a single final response
 
 ## Prerequisites
 
@@ -52,7 +52,9 @@ cp .env.example .env
 Edit `.env` and add your Telegram bot token:
 ```env
 TELEGRAM_TOKEN=your_bot_token_here
-UPDATE_INTERVAL_MS=1500
+TYPING_INTERVAL_MS=4000
+GEMINI_TIMEOUT_MS=300000
+GEMINI_NO_OUTPUT_TIMEOUT_MS=60000
 ```
 
 ## Getting a Telegram Bot Token
@@ -64,6 +66,63 @@ UPDATE_INTERVAL_MS=1500
 5. Paste it into your `.env` file
 
 ## Usage
+
+### CLI Mode
+
+After install, the package exposes a CLI command:
+
+```bash
+agent-bridge
+```
+
+Local development alternatives:
+
+```bash
+npm run cli
+npx agent-bridge
+```
+
+### Config File (CLI)
+
+On first run, the CLI automatically creates:
+
+```text
+~/.agent-bridge/config.json
+```
+
+with placeholder values, then exits so you can edit it.
+
+After updating placeholders, run again:
+
+```bash
+agent-bridge
+```
+
+You can also use a custom path:
+
+```bash
+agent-bridge --config /path/to/config.json
+```
+
+If the custom config path does not exist, a template file is created there as well.
+
+You can still bootstrap from the example file if preferred:
+
+```bash
+cp agent-bridge.config.example.json ~/.agent-bridge/config.json
+```
+
+Environment variables still work and take precedence over config values.
+
+### Run In Background
+
+Simple background run:
+
+```bash
+nohup agent-bridge > agent-bridge.log 2>&1 &
+```
+
+Recommended for production: PM2 (see section below).
 
 ### Development Mode
 
@@ -121,16 +180,32 @@ pm2 save
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `TELEGRAM_TOKEN` | Yes | - | Your Telegram bot token from BotFather |
-| `UPDATE_INTERVAL_MS` | No | 1500 | Interval (in milliseconds) for updating Telegram messages during streaming |
+| `TYPING_INTERVAL_MS` | No | 4000 | Interval (in milliseconds) for refreshing Telegram typing status |
+| `GEMINI_TIMEOUT_MS` | No | 120000 | Overall timeout for a single Gemini CLI run |
+| `GEMINI_NO_OUTPUT_TIMEOUT_MS` | No | 60000 | Idle timeout; aborts if Gemini emits no output for this duration |
+| `GEMINI_APPROVAL_MODE` | No | - | Gemini approval mode (for example: `default`, `auto_edit`, `yolo`, `plan`) |
+| `GEMINI_MODEL` | No | - | Gemini model override passed to CLI |
+| `ACP_PERMISSION_STRATEGY` | No | allow_once | Auto-select ACP permission option kind (`allow_once`, `reject_once`, or `cancelled`) |
 | `MAX_RESPONSE_LENGTH` | No | 4000 | Maximum response length in characters to prevent memory issues |
+| `HEARTBEAT_INTERVAL_MS` | No | 60000 | Server heartbeat log interval in milliseconds (`0` disables heartbeat logs) |
+| `AGENT_BRIDGE_HOME` | No | ~/.agent-bridge | Home directory for Agent Bridge runtime files |
+| `MEMORY_FILE_PATH` | No | ~/.agent-bridge/MEMORY.md | Persistent memory file path injected into Gemini prompt context |
+| `MEMORY_MAX_CHARS` | No | 12000 | Max memory-file characters injected into prompt context |
 
-### Update Interval
+### Persistent Memory File
 
-The `UPDATE_INTERVAL_MS` controls how often the bot updates messages while streaming:
+- The bridge ensures a memory file exists at `~/.agent-bridge/MEMORY.md` on startup.
+- Gemini is started with `--include-directories ~/.agent-bridge` so it can access that file.
+- Each prompt includes memory instructions and current `MEMORY.md` content.
+- When asked to memorize/remember something, Gemini is instructed to append new notes under `## Notes`.
 
-- **Lower values (500-1000ms)**: More real-time feel, but higher API usage
-- **Higher values (1500-2000ms)**: Better for rate limits, slight delay in updates
-- **Recommended**: 1500ms balances responsiveness and API limits
+### Timeout Tuning
+
+Use both timeouts together for reliability:
+
+- `GEMINI_TIMEOUT_MS`: hard cap for total request time (recommended: `300000`)
+- `GEMINI_NO_OUTPUT_TIMEOUT_MS`: fail fast if output stalls (recommended: `60000`)
+- Set `GEMINI_NO_OUTPUT_TIMEOUT_MS=0` to disable idle timeout
 
 ### Response Length Limit
 
@@ -145,20 +220,17 @@ The `MAX_RESPONSE_LENGTH` prevents memory issues with very long responses:
 ### The Logic Flow
 
 1. **User sends a message** via Telegram
-2. **Bridge receives** the message and sends initial "Thinking..." response
-3. **ACP handshake** forwards the message to Gemini CLI
-4. **Streaming**: As Gemini CLI streams tokens back via ACP:
-   - Bridge collects tokens
-   - Updates Telegram message at intervals (respecting rate limits)
-   - Shows real-time progress to user
-5. **Final update** ensures complete response is displayed
+2. **Bridge queues** the message if another request is in progress
+3. **Worker dequeues** the next message when prior processing completes
+4. **Gemini run starts** and typing status is shown in Telegram
+5. **Single final reply** is sent when Gemini finishes
 
-### Rate Limit Protection
+### Queueing Behavior
 
-The bridge implements smart buffering to avoid Telegram's rate limits:
-- Messages are only updated at configured intervals
-- Prevents "429 Too Many Requests" errors
-- Handles edit failures gracefully
+The bridge uses a single-worker in-memory queue:
+- Prevents overlapping Gemini runs
+- Preserves message order
+- Avoids duplicate-edit/fallback races from message updates
 
 ## Advantages Over Standard API Bots
 
@@ -187,7 +259,7 @@ gemini --help | grep acp
 ### Rate limit errors
 
 If you see "429 Too Many Requests" errors:
-1. Increase `UPDATE_INTERVAL_MS` in `.env` (try 2000 or higher)
+1. Increase `TYPING_INTERVAL_MS` in `.env` (try 5000 or higher)
 2. Restart the bot
 
 ### Connection issues
@@ -203,6 +275,8 @@ If you see "429 Too Many Requests" errors:
 ```
 RemoteAgent/
 ├── index.js              # Main bridge application
+├── messaging/
+│   └── telegramClient.js # Telegram adapter implementing neutral message context
 ├── package.json          # Node.js dependencies
 ├── ecosystem.config.json # PM2 configuration
 ├── .env.example          # Environment variables template
@@ -213,7 +287,9 @@ RemoteAgent/
 ### Adding Features
 
 The codebase is designed to be simple and extensible:
-- Message handling is in the `bot.on('text', ...)` handler
+- Core queue + ACP logic is in `index.js`
+- Messaging-platform specifics live in `messaging/telegramClient.js`
+- New bot platforms can implement the same message context shape (`text`, `startTyping()`, `sendText()`)
 - Error handling is centralized
 - Rate limiting logic is configurable
 
@@ -240,8 +316,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 Built with:
 - [Telegraf](https://telegraf.js.org/) - Telegram Bot framework
-- [Vercel AI SDK](https://sdk.vercel.ai/) - AI integration toolkit
-- [@ai-sdk/acp](https://www.npmjs.com/package/@ai-sdk/acp) - Agent Communication Protocol provider
+- [@agentclientprotocol/sdk](https://www.npmjs.com/package/@agentclientprotocol/sdk) - Agent Communication Protocol SDK
 
 ## Support
 

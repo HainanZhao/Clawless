@@ -1,12 +1,16 @@
 {
-  "name": "telegram-gemini-bridge",
+  "name": "agent-bridge",
   "version": "1.0.0",
-  "description": "A bridge connecting Telegram bot to Gemini CLI using Agent Communication Protocol (ACP)",
+  "description": "A bridge connecting messaging bot to Agent Gemini CLI using Agent Communication Protocol (ACP)",
   "main": "index.js",
   "type": "module",
+  "bin": {
+    "agent-bridge": "./bin/agent-bridge.js"
+  },
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "cli": "node ./bin/agent-bridge.js"
   },
   "keywords": [
     "telegram",
@@ -19,8 +23,7 @@
   "license": "MIT",
   "dependencies": {
     "telegraf": "^4.16.3",
-    "ai": "^4.2.0",
-    "@ai-sdk/acp": "^1.0.0",
+    "@agentclientprotocol/sdk": "^0.14.1",
     "dotenv": "^16.4.5"
   },
   "engines": {

@@ -1,6 +1,10 @@
-import { streamText } from 'ai';
-import { ACP } from '@ai-sdk/acp';
-import { Telegraf } from 'telegraf';
+import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { Readable, Writable } from 'node:stream';
+import * as acp from '@agentclientprotocol/sdk';
+import { TelegramMessagingClient } from './messaging/telegramClient.js';
 import dotenv from 'dotenv';
 
 // Load environment variables
@@ -12,126 +16,490 @@ if (!process.env.TELEGRAM_TOKEN) {
   process.exit(1);
 }
 
-// Initialize Telegram bot
-const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
+const GEMINI_COMMAND = process.env.GEMINI_COMMAND || 'gemini';
+const GEMINI_TIMEOUT_MS = parseInt(process.env.GEMINI_TIMEOUT_MS || '120000', 10);
+const GEMINI_NO_OUTPUT_TIMEOUT_MS = parseInt(process.env.GEMINI_NO_OUTPUT_TIMEOUT_MS || '60000', 10);
+const GEMINI_APPROVAL_MODE = process.env.GEMINI_APPROVAL_MODE || '';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || '';
+const ACP_PERMISSION_STRATEGY = process.env.ACP_PERMISSION_STRATEGY || 'allow_once';
+const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MS || '60000', 10);
+const ACP_PREWARM_RETRY_MS = parseInt(process.env.ACP_PREWARM_RETRY_MS || '30000', 10);
+const AGENT_BRIDGE_HOME = process.env.AGENT_BRIDGE_HOME || path.join(os.homedir(), '.agent-bridge');
+const MEMORY_FILE_PATH = process.env.MEMORY_FILE_PATH || path.join(AGENT_BRIDGE_HOME, 'MEMORY.md');
+const MEMORY_MAX_CHARS = parseInt(process.env.MEMORY_MAX_CHARS || '12000', 10);
 
-// Initialize the Gemini CLI as an ACP Agent
-const geminiAgent = new ACP({
-  command: 'gemini', 
-  args: ['--protocol', 'acp'] // Tells the CLI to speak ACP
-});
-
-// Configure message update interval (in ms) to avoid Telegram rate limits
-const UPDATE_INTERVAL_MS = parseInt(process.env.UPDATE_INTERVAL_MS || '1500', 10);
+// Typing indicator refresh interval (Telegram typing state expires quickly)
+const TYPING_INTERVAL_MS = parseInt(process.env.TYPING_INTERVAL_MS || '4000', 10);
 
 // Maximum response length to prevent memory issues (Telegram has 4096 char limit anyway)
 const MAX_RESPONSE_LENGTH = parseInt(process.env.MAX_RESPONSE_LENGTH || '4000', 10);
 
-// Track last update time per message to implement buffering
-const lastUpdateTime = new Map();
+const messagingClient = new TelegramMessagingClient({
+  token: process.env.TELEGRAM_TOKEN,
+  typingIntervalMs: TYPING_INTERVAL_MS,
+});
+
+let geminiProcess = null;
+let acpConnection = null;
+let acpSessionId = null;
+let acpInitPromise = null;
+let activePromptCollector = null;
+let messageSequence = 0;
+let acpPrewarmRetryTimer = null;
+
+function logInfo(message, details) {
+  const timestamp = new Date().toISOString();
+  if (details !== undefined) {
+    console.log(`[${timestamp}] ${message}`, details);
+    return;
+  }
+  console.log(`[${timestamp}] ${message}`);
+}
+
+function ensureMemoryFile() {
+  fs.mkdirSync(path.dirname(MEMORY_FILE_PATH), { recursive: true });
+
+  if (!fs.existsSync(MEMORY_FILE_PATH)) {
+    const template = [
+      '# Agent Bridge Memory',
+      '',
+      'This file stores durable memory notes for Agent Bridge.',
+      '',
+      '## Notes',
+      '',
+    ].join('\n');
+    fs.writeFileSync(MEMORY_FILE_PATH, `${template}\n`, 'utf8');
+    logInfo('Created memory file', { memoryFilePath: MEMORY_FILE_PATH });
+  }
+}
+
+function readMemoryContext() {
+  try {
+    const content = fs.readFileSync(MEMORY_FILE_PATH, 'utf8');
+    if (content.length <= MEMORY_MAX_CHARS) {
+      return content;
+    }
+    return content.slice(-MEMORY_MAX_CHARS);
+  } catch (error) {
+    logInfo('Unable to read memory file; continuing without memory context', {
+      memoryFilePath: MEMORY_FILE_PATH,
+      error: error?.message || String(error),
+    });
+    return '';
+  }
+}
+
+function buildPromptWithMemory(userPrompt) {
+  const memoryContext = readMemoryContext() || '(No saved memory yet)';
+
+  return [
+    'System instruction:',
+    `- Persistent memory file path: ${MEMORY_FILE_PATH}`,
+    '- If user asks to remember/memorize/save for later, append a concise bullet under "## Notes" in that file.',
+    '- Do not overwrite existing memory entries; append only.',
+    '',
+    'Current memory context:',
+    memoryContext,
+    '',
+    'User message:',
+    userPrompt,
+  ].join('\n');
+}
+
+class TelegramAcpClient {
+  async requestPermission(params) {
+    const { options } = params;
+    if (!Array.isArray(options) || options.length === 0) {
+      return { outcome: { outcome: 'cancelled' } };
+    }
+
+    if (ACP_PERMISSION_STRATEGY === 'cancelled') {
+      return { outcome: { outcome: 'cancelled' } };
+    }
+
+    const preferred = options.find((option) => option.kind === ACP_PERMISSION_STRATEGY);
+    const selectedOption = preferred || options[0];
+
+    return {
+      outcome: {
+        outcome: 'selected',
+        optionId: selectedOption.optionId,
+      },
+    };
+  }
+
+  async sessionUpdate(params) {
+    if (!activePromptCollector || params.sessionId !== acpSessionId) {
+      return;
+    }
+
+    activePromptCollector.onActivity();
+
+    if (params.update?.sessionUpdate === 'agent_message_chunk' && params.update?.content?.type === 'text') {
+      activePromptCollector.append(params.update.content.text);
+    }
+  }
+
+  async readTextFile(_params) {
+    return {};
+  }
+
+  async writeTextFile(_params) {
+    return {};
+  }
+}
+
+const acpClient = new TelegramAcpClient();
+
+function resetAcpRuntime() {
+  logInfo('Resetting ACP runtime state');
+  activePromptCollector = null;
+  acpConnection = null;
+  acpSessionId = null;
+  acpInitPromise = null;
+
+  if (geminiProcess && !geminiProcess.killed) {
+    geminiProcess.kill('SIGTERM');
+  }
+  geminiProcess = null;
+
+  scheduleAcpPrewarm('runtime reset');
+}
+
+function scheduleAcpPrewarm(reason) {
+  if (hasHealthyAcpRuntime() || acpInitPromise) {
+    return;
+  }
+
+  if (acpPrewarmRetryTimer) {
+    return;
+  }
+
+  logInfo('Triggering ACP prewarm', { reason });
+
+  ensureAcpSession()
+    .then(() => {
+      logInfo('Gemini ACP prewarm complete');
+    })
+    .catch((error) => {
+      logInfo('Gemini ACP prewarm failed', { error: error?.message || String(error) });
+      if (ACP_PREWARM_RETRY_MS > 0) {
+        acpPrewarmRetryTimer = setTimeout(() => {
+          acpPrewarmRetryTimer = null;
+          scheduleAcpPrewarm('retry');
+        }, ACP_PREWARM_RETRY_MS);
+      }
+    });
+}
+
+function buildGeminiAcpArgs() {
+  const args = ['--experimental-acp'];
+  args.push('--include-directories', AGENT_BRIDGE_HOME);
+
+  if (GEMINI_APPROVAL_MODE) {
+    args.push('--approval-mode', GEMINI_APPROVAL_MODE);
+  }
+
+  if (GEMINI_MODEL) {
+    args.push('--model', GEMINI_MODEL);
+  }
+
+  return args;
+}
+
+async function ensureAcpSession() {
+  ensureMemoryFile();
+
+  if (acpConnection && acpSessionId && geminiProcess && !geminiProcess.killed) {
+    return;
+  }
+
+  if (acpInitPromise) {
+    await acpInitPromise;
+    return;
+  }
+
+  acpInitPromise = (async () => {
+    const args = buildGeminiAcpArgs();
+    logInfo('Starting Gemini ACP process', { command: GEMINI_COMMAND, args });
+    geminiProcess = spawn(GEMINI_COMMAND, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: process.cwd(),
+    });
+
+    geminiProcess.stderr.on('data', (chunk) => {
+      const text = chunk.toString().trim();
+      if (text) {
+        console.error(`[gemini] ${text}`);
+      }
+      if (activePromptCollector) {
+        activePromptCollector.onActivity();
+      }
+    });
+
+    geminiProcess.on('error', (error) => {
+      console.error('Gemini ACP process error:', error.message);
+      resetAcpRuntime();
+    });
+
+    geminiProcess.on('close', (code, signal) => {
+      console.error(`Gemini ACP process closed (code=${code}, signal=${signal})`);
+      resetAcpRuntime();
+    });
+
+    // ACP uses JSON-RPC over streams; Gemini stdio is the ACP transport here.
+    const input = Writable.toWeb(geminiProcess.stdin);
+    const output = Readable.toWeb(geminiProcess.stdout);
+    const stream = acp.ndJsonStream(input, output);
+
+    acpConnection = new acp.ClientSideConnection(() => acpClient, stream);
+
+    await acpConnection.initialize({
+      protocolVersion: acp.PROTOCOL_VERSION,
+      clientCapabilities: {},
+    });
+    logInfo('ACP connection initialized');
+
+    const session = await acpConnection.newSession({
+      cwd: process.cwd(),
+      mcpServers: [],
+    });
+
+    acpSessionId = session.sessionId;
+    logInfo('ACP session ready', { sessionId: acpSessionId });
+  })();
+
+  try {
+    await acpInitPromise;
+  } finally {
+    acpInitPromise = null;
+  }
+}
+
+function hasHealthyAcpRuntime() {
+  return Boolean(acpConnection && acpSessionId && geminiProcess && !geminiProcess.killed);
+}
+
+const messageQueue = [];
+let isQueueProcessing = false;
+
+function enqueueMessage(messageContext) {
+  return new Promise((resolve, reject) => {
+    const requestId = ++messageSequence;
+    messageQueue.push({ requestId, messageContext, resolve, reject });
+    logInfo('Message enqueued', { requestId, queueLength: messageQueue.length });
+    processQueue().catch((error) => {
+      console.error('Queue processor failed:', error);
+    });
+  });
+}
+
+async function processQueue() {
+  if (isQueueProcessing) {
+    return;
+  }
+
+  isQueueProcessing = true;
+  while (messageQueue.length > 0) {
+    const item = messageQueue.shift();
+    if (!item) {
+      continue;
+    }
+
+    try {
+      logInfo('Processing queued message', { requestId: item.requestId, queueLength: messageQueue.length });
+      await processSingleMessage(item.messageContext);
+      logInfo('Message processed', { requestId: item.requestId });
+      item.resolve();
+    } catch (error) {
+      logInfo('Message processing failed', { requestId: item.requestId, error: error?.message || String(error) });
+      item.reject(error);
+    }
+  }
+  isQueueProcessing = false;
+}
+
+/**
+ * Streams text output from Gemini CLI for a single prompt.
+ */
+async function runAcpPrompt(promptText) {
+  await ensureAcpSession();
+  logInfo('Starting ACP prompt', { sessionId: acpSessionId, promptLength: promptText.length });
+  const promptForGemini = buildPromptWithMemory(promptText);
+
+  return new Promise((resolve, reject) => {
+    let fullResponse = '';
+    let isTruncated = false;
+    let isSettled = false;
+    let noOutputTimeout = null;
+
+    const clearTimers = () => {
+      clearTimeout(overallTimeout);
+      if (noOutputTimeout) {
+        clearTimeout(noOutputTimeout);
+      }
+    };
+
+    const failOnce = (error) => {
+      if (isSettled) {
+        return;
+      }
+      isSettled = true;
+      clearTimers();
+      activePromptCollector = null;
+      logInfo('ACP prompt failed', { sessionId: acpSessionId, error: error?.message || String(error) });
+      reject(error);
+    };
+
+    const resolveOnce = (value) => {
+      if (isSettled) {
+        return;
+      }
+      isSettled = true;
+      clearTimers();
+      activePromptCollector = null;
+      logInfo('ACP prompt completed', { sessionId: acpSessionId, responseLength: value.length });
+      resolve(value);
+    };
+
+    const refreshNoOutputTimer = () => {
+      if (!GEMINI_NO_OUTPUT_TIMEOUT_MS || GEMINI_NO_OUTPUT_TIMEOUT_MS <= 0) {
+        return;
+      }
+
+      if (noOutputTimeout) {
+        clearTimeout(noOutputTimeout);
+      }
+
+      noOutputTimeout = setTimeout(async () => {
+        try {
+          if (acpConnection && acpSessionId) {
+            await acpConnection.cancel({ sessionId: acpSessionId });
+          }
+        } catch (_) {
+        }
+        failOnce(new Error(`Gemini ACP produced no output for ${GEMINI_NO_OUTPUT_TIMEOUT_MS}ms`));
+      }, GEMINI_NO_OUTPUT_TIMEOUT_MS);
+    };
+
+    const overallTimeout = setTimeout(async () => {
+      try {
+        if (acpConnection && acpSessionId) {
+          await acpConnection.cancel({ sessionId: acpSessionId });
+        }
+      } catch (_) {
+      }
+      failOnce(new Error(`Gemini ACP timed out after ${GEMINI_TIMEOUT_MS}ms`));
+    }, GEMINI_TIMEOUT_MS);
+
+    activePromptCollector = {
+      onActivity: refreshNoOutputTimer,
+      append: (textChunk) => {
+        refreshNoOutputTimer();
+        if (isTruncated) {
+          return;
+        }
+
+        fullResponse += textChunk;
+        if (fullResponse.length > MAX_RESPONSE_LENGTH) {
+          fullResponse = fullResponse.substring(0, MAX_RESPONSE_LENGTH) + '\n\n[Response truncated due to length]';
+          isTruncated = true;
+        }
+      },
+    };
+
+    refreshNoOutputTimer();
+
+    acpConnection.prompt({
+      sessionId: acpSessionId,
+      prompt: [
+        {
+          type: 'text',
+          text: promptForGemini,
+        },
+      ],
+    })
+      .then((result) => {
+        if (result?.stopReason === 'cancelled' && !fullResponse) {
+          failOnce(new Error('Gemini ACP prompt was cancelled'));
+          return;
+        }
+        resolveOnce(fullResponse || 'No response received.');
+      })
+      .catch((error) => {
+        failOnce(new Error(error?.message || 'Gemini ACP prompt failed'));
+      });
+  });
+}
+
+async function processSingleMessage(messageContext) {
+  const stopTypingIndicator = messageContext.startTyping();
+  try {
+    const fullResponse = await runAcpPrompt(messageContext.text);
+    await messageContext.sendText(fullResponse || 'No response received.');
+  } finally {
+    stopTypingIndicator();
+  }
+}
 
 /**
  * Handles incoming text messages from Telegram
  */
-bot.on('text', async (ctx) => {
-  let fullResponse = "";
-  const messageId = `${ctx.chat.id}_${Date.now()}`;
-  
-  try {
-    // Send initial "thinking" message
-    const info = await ctx.reply("🤔 Thinking...");
-    lastUpdateTime.set(messageId, Date.now());
-
-    // Stream tokens from the CLI via ACP
-    const { textStream } = await streamText({
-      model: geminiAgent,
-      prompt: ctx.message.text,
+messagingClient.onTextMessage((messageContext) => {
+  enqueueMessage(messageContext)
+    .catch(async (error) => {
+      console.error('Error processing message:', error);
+      await messageContext.sendText(`❌ Error: ${error.message}`);
     });
-
-    for await (const delta of textStream) {
-      fullResponse += delta;
-      
-      // Enforce maximum response length to prevent memory issues
-      if (fullResponse.length > MAX_RESPONSE_LENGTH) {
-        fullResponse = fullResponse.substring(0, MAX_RESPONSE_LENGTH) + '\n\n[Response truncated due to length]';
-        break;
-      }
-      
-      const now = Date.now();
-      const timeSinceLastUpdate = now - (lastUpdateTime.get(messageId) || 0);
-      
-      // Update Telegram message at intervals to simulate streaming
-      // while respecting rate limits
-      if (timeSinceLastUpdate >= UPDATE_INTERVAL_MS) {
-        try {
-          await ctx.telegram.editMessageText(
-            ctx.chat.id, 
-            info.message_id, 
-            null, 
-            fullResponse || "..."
-          );
-          lastUpdateTime.set(messageId, now);
-        } catch (editError) {
-          // Check for specific Telegram error codes
-          // 400 with "message is not modified" is expected and can be ignored
-          const isNotModified = editError.response?.error_code === 400 && 
-                               editError.description?.includes('message is not modified');
-          
-          if (!isNotModified) {
-            console.error('Error updating message:', editError.message);
-          }
-        }
-      }
-    }
-    
-    // Final update with complete response
-    try {
-      await ctx.telegram.editMessageText(
-        ctx.chat.id, 
-        info.message_id, 
-        null, 
-        fullResponse || "No response received."
-      );
-    } catch (finalError) {
-      // If final edit fails, send as new message
-      if (fullResponse) {
-        await ctx.reply(fullResponse);
-      }
-    }
-    
-    // Cleanup
-    lastUpdateTime.delete(messageId);
-    
-  } catch (error) {
-    console.error('Error processing message:', error);
-    await ctx.reply(`❌ Error: ${error.message}`);
-    lastUpdateTime.delete(messageId);
-  }
 });
 
 // Error handling
-bot.catch((err, ctx) => {
-  console.error(`Error for ${ctx.updateType}:`, err);
-  ctx.reply('⚠️ An error occurred while processing your request.').catch(() => {});
+messagingClient.onError((error, messageContext) => {
+  console.error('Telegram client error:', error);
+  if (messageContext) {
+    messageContext.sendText('⚠️ An error occurred while processing your request.').catch(() => {});
+  }
 });
 
 // Graceful shutdown
 process.once('SIGINT', () => {
   console.log('Received SIGINT, stopping bot...');
-  bot.stop('SIGINT');
+  messagingClient.stop('SIGINT');
 });
 
 process.once('SIGTERM', () => {
   console.log('Received SIGTERM, stopping bot...');
-  bot.stop('SIGTERM');
+  messagingClient.stop('SIGTERM');
 });
 
 // Launch the bot
-console.log('Starting Telegram-Gemini ACP Bridge...');
-bot.launch()
-  .then(() => {
-    console.log('Bot launched successfully!');
-    console.log(`Update interval: ${UPDATE_INTERVAL_MS}ms`);
+logInfo('Starting Agent ACP Bridge...');
+scheduleAcpPrewarm('startup');
+messagingClient.launch()
+  .then(async () => {
+    ensureMemoryFile();
+
+    logInfo('Bot launched successfully', {
+      typingIntervalMs: TYPING_INTERVAL_MS,
+      geminiTimeoutMs: GEMINI_TIMEOUT_MS,
+      geminiNoOutputTimeoutMs: GEMINI_NO_OUTPUT_TIMEOUT_MS,
+      heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
+      acpPrewarmRetryMs: ACP_PREWARM_RETRY_MS,
+      memoryFilePath: MEMORY_FILE_PATH,
+      acpMode: `${GEMINI_COMMAND} --experimental-acp`,
+    });
+
+    scheduleAcpPrewarm('post-launch');
+
+    if (HEARTBEAT_INTERVAL_MS > 0) {
+      setInterval(() => {
+        logInfo('Heartbeat', {
+          queueLength: messageQueue.length,
+          acpSessionReady: Boolean(acpSessionId),
+          geminiProcessRunning: Boolean(geminiProcess && !geminiProcess.killed),
+        });
+      }, HEARTBEAT_INTERVAL_MS);
+    }
   })
   .catch((error) => {
     console.error('Failed to launch bot:', error);
