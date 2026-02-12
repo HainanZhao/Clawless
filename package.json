@@ -1,6 +1,6 @@
 {
   "name": "agent-bridge",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "A bridge connecting messaging bot to Agent Gemini CLI using Agent Communication Protocol (ACP)",
   "main": "index.js",
   "type": "module",
