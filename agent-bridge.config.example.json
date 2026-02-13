@@ -11,7 +11,7 @@
   "acpDebugStream": false,
   "maxResponseLength": 4000,
   "heartbeatIntervalMs": 60000,
-  "callbackHost": "127.0.0.1",
+  "callbackHost": "localhost",
   "callbackPort": 8787,
   "callbackAuthToken": "",
   "callbackMaxBodyBytes": 65536,

@@ -46,7 +46,7 @@ const DEFAULT_CONFIG_TEMPLATE = {
 	acpStreamStdout: false,
 	acpDebugStream: false,
 	heartbeatIntervalMs: 60000,
-	callbackHost: '127.0.0.1',
+	callbackHost: 'localhost',
 	callbackPort: 8787,
 	callbackAuthToken: '',
 	callbackMaxBodyBytes: 65536,
