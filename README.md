@@ -11,6 +11,7 @@ A bridge that connects a Telegram bot to the Gemini CLI using the Agent Communic
 - 💾 **Persistent Context**: Maintains local session unlike standard API calls
 - 📬 **Sequential Queueing**: Processes one message at a time to avoid overlap and races
 - 🔔 **Local Callback Endpoint**: Accepts localhost HTTP POST requests and forwards payloads directly to Telegram
+- ⏰ **Cron Scheduler**: Schedule tasks to run at specific times or on recurring basis via REST API
 
 ## Architecture
 
@@ -201,10 +202,11 @@ pm2 save
 
 The bridge exposes:
 
-- `POST http://127.0.0.1:8787/callback/telegram`
-- `GET http://127.0.0.1:8787/healthz`
+- `POST http://127.0.0.1:8787/callback/telegram` - Send messages to Telegram
+- `GET http://127.0.0.1:8787/healthz` - Health check
+- `POST/GET/DELETE http://127.0.0.1:8787/api/schedule` - Scheduler API
 
-Request body:
+Request body for callback:
 
 ```json
 {
@@ -224,6 +226,41 @@ curl -sS -X POST "http://127.0.0.1:8787/callback/telegram" \
   -H "x-callback-token: $CALLBACK_AUTH_TOKEN" \
   -d '{"text":"Backup completed at 03:00"}'
 ```
+
+### Scheduler API
+
+The bridge includes a built-in cron scheduler that allows you to schedule tasks to be executed through Gemini CLI:
+
+**Create a recurring schedule:**
+```bash
+curl -X POST http://127.0.0.1:8787/api/schedule \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Check my calendar and send me a summary",
+    "description": "Daily calendar summary",
+    "cronExpression": "0 9 * * *"
+  }'
+```
+
+**Create a one-time schedule:**
+```bash
+curl -X POST http://127.0.0.1:8787/api/schedule \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Remind me to take a break",
+    "oneTime": true,
+    "runAt": "2026-02-13T15:30:00Z"
+  }'
+```
+
+When a scheduled job runs, it executes the message through Gemini CLI and sends the response to your Telegram chat.
+
+**Ask Gemini to create schedules naturally:**
+- "Remind me to take a break in 30 minutes"
+- "Check my calendar every morning at 9am and send me a summary"
+- "Every Friday at 5pm, remind me to review my weekly goals"
+
+See [SCHEDULER.md](SCHEDULER.md) for complete API documentation.
 
 ### Persistent Memory File
 
