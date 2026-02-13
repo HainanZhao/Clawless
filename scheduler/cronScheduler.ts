@@ -15,6 +15,7 @@ export interface ScheduleConfig {
 export interface ScheduleJob {
   config: ScheduleConfig;
   task?: cron.ScheduledTask;
+  timeout?: NodeJS.Timeout;
 }
 
 export class CronScheduler {
@@ -61,13 +62,10 @@ export class CronScheduler {
       // Schedule one-time job
       const delay = scheduleConfig.runAt.getTime() - Date.now();
       if (delay > 0) {
-        const timeout = setTimeout(async () => {
+        job.timeout = setTimeout(async () => {
           await this.executeJob(scheduleConfig.id);
           this.removeSchedule(scheduleConfig.id);
         }, delay);
-        
-        // Store timeout reference in a way that can be cleared
-        (job as any).timeout = timeout;
       }
     } else if (scheduleConfig.cronExpression) {
       // Schedule recurring job
@@ -134,8 +132,8 @@ export class CronScheduler {
     }
 
     // Clear timeout if it exists (for one-time jobs)
-    if ((job as any).timeout) {
-      clearTimeout((job as any).timeout);
+    if (job.timeout) {
+      clearTimeout(job.timeout);
     }
 
     this.jobs.delete(scheduleId);
