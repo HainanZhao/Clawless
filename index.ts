@@ -6,6 +6,7 @@ import path from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import * as acp from '@agentclientprotocol/sdk';
 import { TelegramMessagingClient } from './messaging/telegramClient.js';
+import { CronScheduler, ScheduleConfig } from './scheduler/cronScheduler.js';
 import dotenv from 'dotenv';
 
 // Load environment variables
@@ -49,6 +50,41 @@ const messagingClient = new TelegramMessagingClient({
   token: process.env.TELEGRAM_TOKEN,
   typingIntervalMs: TYPING_INTERVAL_MS,
 });
+
+// Scheduler callback - executes Gemini CLI and sends result to Telegram
+async function handleScheduledJob(schedule: ScheduleConfig): Promise<void> {
+  logInfo('Executing scheduled job', { scheduleId: schedule.id, message: schedule.message });
+
+  try {
+    // Run the scheduled message through Gemini CLI
+    const response = await runAcpPrompt(schedule.message);
+    
+    // Send result to Telegram
+    const targetChatId = resolveChatId(lastIncomingChatId);
+    if (targetChatId) {
+      const resultMessage = `🔔 Scheduled task completed:\n\n${schedule.description || schedule.message}\n\n${response}`;
+      await messagingClient.sendTextToChat(targetChatId, normalizeOutgoingText(resultMessage));
+      logInfo('Scheduled job result sent to Telegram', { scheduleId: schedule.id, chatId: targetChatId });
+    } else {
+      logInfo('No target chat available for scheduled job result', { scheduleId: schedule.id });
+    }
+  } catch (error: any) {
+    logInfo('Scheduled job execution failed', { 
+      scheduleId: schedule.id, 
+      error: error?.message || String(error) 
+    });
+    
+    const targetChatId = resolveChatId(lastIncomingChatId);
+    if (targetChatId) {
+      await messagingClient.sendTextToChat(
+        targetChatId, 
+        `❌ Scheduled task failed: ${schedule.description || schedule.message}\n\nError: ${error?.message || String(error)}`
+      );
+    }
+  }
+}
+
+const cronScheduler = new CronScheduler(handleScheduledJob);
 
 let geminiProcess: any = null;
 let acpConnection: any = null;
@@ -188,15 +224,117 @@ function normalizeOutgoingText(text: unknown) {
   return `${normalized.slice(0, MAX_RESPONSE_LENGTH)}\n\n[Response truncated due to length]`;
 }
 
+async function handleSchedulerRequest(req: http.IncomingMessage, res: http.ServerResponse, requestUrl: URL) {
+  if (!isCallbackAuthorized(req)) {
+    sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+    return;
+  }
+
+  // POST /api/schedule - Create a new schedule
+  if (requestUrl.pathname === '/api/schedule' && req.method === 'POST') {
+    try {
+      const bodyText = await readRequestBody(req, CALLBACK_MAX_BODY_BYTES);
+      const body = bodyText ? JSON.parse(bodyText) : {};
+
+      // Validate required fields
+      if (!body.message) {
+        sendJson(res, 400, { ok: false, error: 'Field `message` is required' });
+        return;
+      }
+
+      // Parse runAt date if provided
+      let runAt: Date | undefined;
+      if (body.runAt) {
+        runAt = new Date(body.runAt);
+        if (isNaN(runAt.getTime())) {
+          sendJson(res, 400, { ok: false, error: 'Invalid date format for `runAt`' });
+          return;
+        }
+      }
+
+      const schedule = cronScheduler.createSchedule({
+        message: body.message,
+        description: body.description,
+        cronExpression: body.cronExpression,
+        oneTime: body.oneTime || false,
+        runAt,
+      });
+
+      logInfo('Schedule created', { scheduleId: schedule.id });
+      sendJson(res, 201, { ok: true, schedule });
+    } catch (error: any) {
+      logInfo('Failed to create schedule', { error: error?.message || String(error) });
+      sendJson(res, 400, { ok: false, error: error?.message || 'Failed to create schedule' });
+    }
+    return;
+  }
+
+  // GET /api/schedule - List all schedules
+  if (requestUrl.pathname === '/api/schedule' && req.method === 'GET') {
+    try {
+      const schedules = cronScheduler.listSchedules();
+      sendJson(res, 200, { ok: true, schedules });
+    } catch (error: any) {
+      sendJson(res, 500, { ok: false, error: error?.message || 'Failed to list schedules' });
+    }
+    return;
+  }
+
+  // GET /api/schedule/:id - Get a specific schedule
+  const getScheduleMatch = requestUrl.pathname.match(/^\/api\/schedule\/([^/]+)$/);
+  if (getScheduleMatch && req.method === 'GET') {
+    try {
+      const scheduleId = getScheduleMatch[1];
+      const schedule = cronScheduler.getSchedule(scheduleId);
+      if (!schedule) {
+        sendJson(res, 404, { ok: false, error: 'Schedule not found' });
+        return;
+      }
+      sendJson(res, 200, { ok: true, schedule });
+    } catch (error: any) {
+      sendJson(res, 500, { ok: false, error: error?.message || 'Failed to get schedule' });
+    }
+    return;
+  }
+
+  // DELETE /api/schedule/:id - Delete a schedule
+  const deleteScheduleMatch = requestUrl.pathname.match(/^\/api\/schedule\/([^/]+)$/);
+  if (deleteScheduleMatch && req.method === 'DELETE') {
+    try {
+      const scheduleId = deleteScheduleMatch[1];
+      const removed = cronScheduler.removeSchedule(scheduleId);
+      if (!removed) {
+        sendJson(res, 404, { ok: false, error: 'Schedule not found' });
+        return;
+      }
+      logInfo('Schedule removed', { scheduleId });
+      sendJson(res, 200, { ok: true, message: 'Schedule removed' });
+    } catch (error: any) {
+      sendJson(res, 500, { ok: false, error: error?.message || 'Failed to remove schedule' });
+    }
+    return;
+  }
+
+  sendJson(res, 404, { ok: false, error: 'Not found' });
+}
+
 async function handleCallbackRequest(req: http.IncomingMessage, res: http.ServerResponse) {
   const hostHeader = req.headers.host || `${CALLBACK_HOST}:${CALLBACK_PORT}`;
   const requestUrl = new URL(req.url || '/', `http://${hostHeader}`);
 
+  // Health check endpoint
   if (requestUrl.pathname === '/healthz') {
     sendJson(res, 200, { ok: true });
     return;
   }
 
+  // Scheduler endpoints
+  if (requestUrl.pathname.startsWith('/api/schedule')) {
+    await handleSchedulerRequest(req, res, requestUrl);
+    return;
+  }
+
+  // Original callback/telegram endpoint
   if (requestUrl.pathname !== '/callback/telegram') {
     sendJson(res, 404, { ok: false, error: 'Not found' });
     return;
@@ -309,6 +447,7 @@ function setupGracefulShutdown() {
   for (const signal of shutdownSignals) {
     process.once(signal, () => {
       console.log(`Received ${signal}, stopping bot...`);
+      cronScheduler.shutdown();
       stopCallbackServer();
       messagingClient.stop(signal);
     });
@@ -352,6 +491,7 @@ function readMemoryContext() {
 function buildPromptWithMemory(userPrompt: string) {
   const memoryContext = readMemoryContext() || '(No saved memory yet)';
   const callbackEndpoint = `http://${CALLBACK_HOST}:${CALLBACK_PORT}/callback/telegram`;
+  const scheduleEndpoint = `http://${CALLBACK_HOST}:${CALLBACK_PORT}/api/schedule`;
 
   return [
     'System instruction:',
@@ -363,9 +503,20 @@ function buildPromptWithMemory(userPrompt: string) {
     `- Persisted callback chat binding file: ${CALLBACK_CHAT_STATE_FILE_PATH}`,
     '- If no `chatId` is provided, the bridge sends to the persisted bound chat.',
     '- For scheduled jobs, include callback delivery steps so results are pushed to Telegram when jobs complete.',
+    '',
+    '**Scheduler API:**',
+    `- Create schedule: POST ${scheduleEndpoint}`,
+    '  Body format for recurring: {"message": "prompt text", "description": "optional", "cronExpression": "* * * * *"}',
+    '  Body format for one-time: {"message": "prompt text", "description": "optional", "oneTime": true, "runAt": "2026-12-31T23:59:59Z"}',
+    '  Cron format: "minute hour day month weekday" (e.g., "0 9 * * *" = daily at 9am, "*/5 * * * *" = every 5 minutes)',
+    `- List schedules: GET ${scheduleEndpoint}`,
+    `- Get schedule: GET ${scheduleEndpoint}/:id`,
+    `- Delete schedule: DELETE ${scheduleEndpoint}/:id`,
+    '- When schedule runs, it executes the message through Gemini CLI and sends results to Telegram.',
+    '- Use this API when user asks to schedule tasks, set reminders, or create recurring jobs.',
     CALLBACK_AUTH_TOKEN
-      ? '- Callback auth is enabled: include `x-callback-token` (or bearer token) when creating callback requests.'
-      : '- Callback auth is disabled unless CALLBACK_AUTH_TOKEN is configured.',
+      ? '- Scheduler auth is enabled: include `x-callback-token` (or bearer token) header when creating requests.'
+      : '- Scheduler auth is disabled unless CALLBACK_AUTH_TOKEN is configured.',
     '',
     'Current memory context:',
     memoryContext,
