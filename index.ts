@@ -57,15 +57,14 @@ const MAX_RESPONSE_LENGTH = parseInt(process.env.MAX_RESPONSE_LENGTH || '4000', 
 
 // Parse Telegram whitelist from environment variable
 // Expected format: comma-separated list of user IDs or stringified JSON array
-const TELEGRAM_WHITELIST: number[] = (() => {
-  const whitelistEnv = process.env.TELEGRAM_WHITELIST || '';
-  if (!whitelistEnv || whitelistEnv.trim() === '') {
+function parseWhitelistFromEnv(envValue: string): number[] {
+  if (!envValue || envValue.trim() === '') {
     return [];
   }
   
   // Try parsing as JSON first
   try {
-    const parsed = JSON.parse(whitelistEnv);
+    const parsed = JSON.parse(envValue);
     if (Array.isArray(parsed)) {
       return parsed.map((id) => {
         const numId = typeof id === 'number' ? id : parseInt(String(id), 10);
@@ -77,11 +76,11 @@ const TELEGRAM_WHITELIST: number[] = (() => {
       }).filter((id): id is number => id !== null);
     }
   } catch {
-    // Not JSON, try comma-separated
+    console.warn('Failed to parse TELEGRAM_WHITELIST as JSON, attempting comma-separated format');
   }
   
   // Parse as comma-separated list
-  return whitelistEnv.split(',')
+  return envValue.split(',')
     .map((id) => {
       const trimmed = id.trim();
       const numId = parseInt(trimmed, 10);
@@ -92,7 +91,9 @@ const TELEGRAM_WHITELIST: number[] = (() => {
       return numId;
     })
     .filter((id): id is number => id !== null);
-})();
+}
+
+const TELEGRAM_WHITELIST: number[] = parseWhitelistFromEnv(process.env.TELEGRAM_WHITELIST || '');
 
 function isUserAuthorized(userId: number | undefined): boolean {
   // If whitelist is empty, block all users by default (safe default)
@@ -1237,8 +1238,7 @@ async function processSingleMessage(messageContext: any, messageRequestId: numbe
 messagingClient.onTextMessage(async (messageContext) => {
   // Check if user is authorized
   if (!isUserAuthorized(messageContext.userId)) {
-    const userName = messageContext.userId ? `User ${messageContext.userId}` : 'Unknown user';
-    console.warn(`Unauthorized access attempt from ${userName}`);
+    console.warn(`Unauthorized access attempt from user ID: ${messageContext.userId ?? 'unknown'}`);
     await messageContext.sendText('🚫 Unauthorized. This bot is restricted to authorized users only.');
     return;
   }
