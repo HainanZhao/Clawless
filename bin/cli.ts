@@ -42,7 +42,7 @@ const DEFAULT_CONFIG_TEMPLATE = {
 	geminiModel: '',
 	acpPermissionStrategy: 'allow_once',
 	geminiTimeoutMs: 900000,
-	geminiNoOutputTimeoutMs: 60000,
+	geminiNoOutputTimeoutMs: 300000,
 	geminiKillGraceMs: 5000,
 	maxResponseLength: 4000,
 	acpStreamStdout: false,
