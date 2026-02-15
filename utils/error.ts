@@ -8,6 +8,29 @@ export function getErrorMessage(error: unknown, fallback = 'Unknown error'): str
   if (error === null || error === undefined) {
     return fallback;
   }
+
+  if (typeof error === 'object') {
+    try {
+      return JSON.stringify(error);
+    } catch {
+      const obj = error as Record<string, unknown>;
+      const constructorName =
+        obj && obj.constructor && typeof obj.constructor.name === 'string'
+          ? obj.constructor.name
+          : 'object';
+      const keys = obj ? Object.keys(obj) : [];
+      const detailsParts: string[] = [];
+      if (constructorName) {
+        detailsParts.push(`type=${constructorName}`);
+      }
+      if (keys.length > 0) {
+        detailsParts.push(`keys=${keys.join(', ')}`);
+      }
+      const details = detailsParts.length > 0 ? ` (${detailsParts.join(', ')})` : '';
+      return `Unserializable error object${details}`;
+    }
+  }
+
   return String(error);
 }
 

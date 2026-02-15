@@ -3,6 +3,7 @@ import { Readable, Writable } from 'node:stream';
 import * as acp from '@agentclientprotocol/sdk';
 import { buildPermissionResponse, noOpAcpFileOperation } from './clientHelpers.js';
 import { getErrorMessage } from '../utils/error.js';
+import { getMcpServersForSession } from './mcpServerHelpers.js';
 
 const ACP_DEBUG_STREAM = String(process.env.ACP_DEBUG_STREAM || '').toLowerCase() === 'true';
 const GEMINI_KILL_GRACE_MS = parseInt(process.env.GEMINI_KILL_GRACE_MS || '5000', 10);
@@ -33,6 +34,26 @@ export async function runPromptWithTempAcp(options: TempAcpRunnerOptions): Promi
     stderrTailMaxChars = 4000,
     logInfo,
   } = options;
+
+  const { source: mcpServersSource, mcpServers } = getMcpServersForSession({
+    logInfo,
+    getErrorMessage,
+    invalidEnvMessage: 'Invalid ACP_MCP_SERVERS_JSON for temp ACP runner; falling back to Gemini settings mcpServers',
+    settingsReadFailMessage:
+      'Failed to read Gemini settings mcpServers for temp ACP runner; falling back to empty array',
+    settingsReadFailAfterInvalidEnvMessage:
+      'Failed to read Gemini settings mcpServers after invalid env override; using empty array',
+    logDetails: { scheduleId },
+  });
+  const mcpServerNames = mcpServers
+    .map((server) => {
+      if (server && typeof server === 'object' && 'name' in server) {
+        return String((server as { name?: unknown }).name ?? '');
+      }
+
+      return '';
+    })
+    .filter((name) => name.length > 0);
 
   const tempProcess = spawn(command, args, {
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -210,9 +231,17 @@ export async function runPromptWithTempAcp(options: TempAcpRunnerOptions): Promi
 
     const session = await tempConnection.newSession({
       cwd,
-      mcpServers: [],
+      mcpServers,
     });
     tempSessionId = session.sessionId;
+
+    logInfo('Scheduler temp ACP session ready', {
+      scheduleId,
+      sessionId: tempSessionId,
+      mcpServersMode: mcpServersSource,
+      mcpServersCount: mcpServers.length,
+      mcpServerNames,
+    });
 
     return await new Promise<string>((resolve, reject) => {
       let response = '';

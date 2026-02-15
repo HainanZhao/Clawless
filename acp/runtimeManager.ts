@@ -1,6 +1,7 @@
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
 import { Readable, Writable } from 'node:stream';
 import * as acp from '@agentclientprotocol/sdk';
+import { getMcpServersForSession } from './mcpServerHelpers.js';
 
 type LogInfoFn = (message: string, details?: unknown) => void;
 type GetErrorMessageFn = (error: unknown, fallbackMessage?: string) => string;
@@ -46,6 +47,16 @@ export function createAcpRuntime({
   getErrorMessage,
   logInfo,
 }: CreateAcpRuntimeParams) {
+  const defaultAcpPrewarmMaxRetries = 10;
+  const acpPrewarmMaxRetriesEnv = process.env.ACP_PREWARM_MAX_RETRIES;
+  const parsedAcpPrewarmMaxRetries = Number.parseInt(
+    acpPrewarmMaxRetriesEnv ?? `${defaultAcpPrewarmMaxRetries}`,
+    10,
+  );
+  const acpPrewarmMaxRetries = Number.isNaN(parsedAcpPrewarmMaxRetries)
+    ? defaultAcpPrewarmMaxRetries
+    : parsedAcpPrewarmMaxRetries;
+
   let geminiProcess: any = null;
   let acpConnection: any = null;
   let acpSessionId: any = null;
@@ -53,6 +64,7 @@ export function createAcpRuntime({
   let activePromptCollector: any = null;
   let manualAbortRequested = false;
   let acpPrewarmRetryTimer: NodeJS.Timeout | null = null;
+  let acpPrewarmRetryAttempts = 0;
   let geminiStderrTail = '';
 
   const appendGeminiStderrTail = (text: string) => {
@@ -224,7 +236,28 @@ export function createAcpRuntime({
 
     acpInitPromise = (async () => {
       const args = buildGeminiAcpArgs();
-      logInfo('Starting Gemini ACP process', { command: geminiCommand, args });
+      const { source: mcpServersSource, mcpServers } = getMcpServersForSession({
+        logInfo,
+        getErrorMessage,
+        invalidEnvMessage: 'Invalid ACP_MCP_SERVERS_JSON; falling back to Gemini settings mcpServers',
+        settingsReadFailMessage: 'Failed to read Gemini settings mcpServers; falling back to empty array',
+        settingsReadFailAfterInvalidEnvMessage:
+          'Failed to read Gemini settings mcpServers after invalid env override; using empty array',
+      });
+      const mcpServerNames = mcpServers
+        .map((server) => {
+          if (server && typeof server === 'object' && 'name' in server) {
+            return String((server as { name?: unknown }).name ?? '');
+          }
+
+          return '';
+        })
+        .filter((name) => name.length > 0);
+
+      logInfo('Starting Gemini ACP process', {
+        command: geminiCommand,
+        args,
+      });
       geminiStderrTail = '';
       geminiProcess = spawn(geminiCommand, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -268,11 +301,16 @@ export function createAcpRuntime({
 
         const session = await acpConnection.newSession({
           cwd: process.cwd(),
-          mcpServers: [],
+          mcpServers,
         });
 
         acpSessionId = session.sessionId;
-        logInfo('ACP session ready', { sessionId: acpSessionId });
+        logInfo('ACP session ready', {
+          sessionId: acpSessionId,
+          mcpServersMode: mcpServersSource,
+          mcpServersCount: mcpServers.length,
+          mcpServerNames,
+        });
       } catch (error: any) {
         const baseMessage = getErrorMessage(error);
         const isInternalError = baseMessage.includes('Internal error');
@@ -310,10 +348,21 @@ export function createAcpRuntime({
 
     ensureAcpSession()
       .then(() => {
+        acpPrewarmRetryAttempts = 0;
         logInfo('Gemini ACP prewarm complete');
       })
       .catch((error: unknown) => {
         logInfo('Gemini ACP prewarm failed', { error: getErrorMessage(error) });
+
+        acpPrewarmRetryAttempts += 1;
+        if (acpPrewarmMaxRetries > 0 && acpPrewarmRetryAttempts >= acpPrewarmMaxRetries) {
+          logInfo('Gemini ACP prewarm retries exhausted; stopping automatic retries', {
+            attempts: acpPrewarmRetryAttempts,
+            maxRetries: acpPrewarmMaxRetries,
+          });
+          return;
+        }
+
         if (acpPrewarmRetryMs > 0) {
           acpPrewarmRetryTimer = setTimeout(() => {
             acpPrewarmRetryTimer = null;
