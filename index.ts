@@ -11,15 +11,9 @@ import { registerTelegramHandlers } from './messaging/registerTelegramHandlers.j
 import { createCallbackServer } from './core/callbackServer.js';
 import { runPromptWithTempAcp } from './acp/tempAcpRunner.js';
 import { createAcpRuntime } from './acp/runtimeManager.js';
-import {
-  buildPermissionResponse,
-  noOpAcpFileOperation,
-} from './acp/clientHelpers.js';
+import { buildPermissionResponse, noOpAcpFileOperation } from './acp/clientHelpers.js';
 import { getErrorMessage, logInfo } from './utils/error.js';
-import {
-  parseAllowlistFromEnv,
-  parseWhitelistFromEnv,
-} from './utils/telegramWhitelist.js';
+import { parseAllowlistFromEnv, parseWhitelistFromEnv } from './utils/telegramWhitelist.js';
 import { normalizeOutgoingText } from './utils/commandText.js';
 import {
   ensureBridgeHomeDirectory,
@@ -37,23 +31,17 @@ import dotenv from 'dotenv';
 // Load environment variables
 dotenv.config();
 
-const MESSAGING_PLATFORM = (process.env.MESSAGING_PLATFORM || 'telegram')
-  .trim()
-  .toLowerCase();
+const MESSAGING_PLATFORM = (process.env.MESSAGING_PLATFORM || 'telegram').trim().toLowerCase();
 const SUPPORTED_PLATFORMS = new Set(['telegram', 'slack']);
 
 if (!SUPPORTED_PLATFORMS.has(MESSAGING_PLATFORM)) {
-  console.error(
-    `Error: Unknown MESSAGING_PLATFORM: ${MESSAGING_PLATFORM}. Use 'telegram' or 'slack'.`,
-  );
+  console.error(`Error: Unknown MESSAGING_PLATFORM: ${MESSAGING_PLATFORM}. Use 'telegram' or 'slack'.`);
   process.exit(1);
 }
 
 if (MESSAGING_PLATFORM === 'telegram') {
   if (!process.env.TELEGRAM_TOKEN) {
-    console.error(
-      'Error: TELEGRAM_TOKEN environment variable is required for Telegram',
-    );
+    console.error('Error: TELEGRAM_TOKEN environment variable is required for Telegram');
     process.exit(1);
   }
 
@@ -61,102 +49,54 @@ if (MESSAGING_PLATFORM === 'telegram') {
     process.env.TELEGRAM_TOKEN.includes('your_telegram_bot_token_here') ||
     !process.env.TELEGRAM_TOKEN.includes(':')
   ) {
-    console.error(
-      'Error: TELEGRAM_TOKEN looks invalid. Set a real token from @BotFather in your config/env.',
-    );
+    console.error('Error: TELEGRAM_TOKEN looks invalid. Set a real token from @BotFather in your config/env.');
     process.exit(1);
   }
 }
 
 if (MESSAGING_PLATFORM === 'slack') {
   if (!process.env.SLACK_BOT_TOKEN) {
-    console.error(
-      'Error: SLACK_BOT_TOKEN environment variable is required for Slack',
-    );
+    console.error('Error: SLACK_BOT_TOKEN environment variable is required for Slack');
     process.exit(1);
   }
 
   if (!process.env.SLACK_SIGNING_SECRET) {
-    console.error(
-      'Error: SLACK_SIGNING_SECRET environment variable is required for Slack',
-    );
+    console.error('Error: SLACK_SIGNING_SECRET environment variable is required for Slack');
     process.exit(1);
   }
 }
 
 const GEMINI_COMMAND = process.env.GEMINI_COMMAND || 'gemini';
-const GEMINI_TIMEOUT_MS = parseInt(
-  process.env.GEMINI_TIMEOUT_MS || '1200000',
-  10,
-);
-const GEMINI_NO_OUTPUT_TIMEOUT_MS = parseInt(
-  process.env.GEMINI_NO_OUTPUT_TIMEOUT_MS || '300000',
-  10,
-);
+const GEMINI_TIMEOUT_MS = parseInt(process.env.GEMINI_TIMEOUT_MS || '1200000', 10);
+const GEMINI_NO_OUTPUT_TIMEOUT_MS = parseInt(process.env.GEMINI_NO_OUTPUT_TIMEOUT_MS || '300000', 10);
 const GEMINI_APPROVAL_MODE = process.env.GEMINI_APPROVAL_MODE || 'yolo';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || '';
-const ACP_PERMISSION_STRATEGY =
-  process.env.ACP_PERMISSION_STRATEGY || 'allow_once';
-const ACP_STREAM_STDOUT =
-  String(process.env.ACP_STREAM_STDOUT || '').toLowerCase() === 'true';
-const ACP_DEBUG_STREAM =
-  String(process.env.ACP_DEBUG_STREAM || '').toLowerCase() === 'true';
-const HEARTBEAT_INTERVAL_MS = parseInt(
-  process.env.HEARTBEAT_INTERVAL_MS || '60000',
-  10,
-);
-const ACP_PREWARM_RETRY_MS = parseInt(
-  process.env.ACP_PREWARM_RETRY_MS || '30000',
-  10,
-);
-const GEMINI_KILL_GRACE_MS = parseInt(
-  process.env.GEMINI_KILL_GRACE_MS || '5000',
-  10,
-);
-const AGENT_BRIDGE_HOME =
-  process.env.AGENT_BRIDGE_HOME || path.join(os.homedir(), '.clawless');
-const MEMORY_FILE_PATH =
-  process.env.MEMORY_FILE_PATH || path.join(AGENT_BRIDGE_HOME, 'MEMORY.md');
-const SCHEDULES_FILE_PATH =
-  process.env.SCHEDULES_FILE_PATH ||
-  path.join(AGENT_BRIDGE_HOME, 'schedules.json');
-const CALLBACK_CHAT_STATE_FILE_PATH = path.join(
-  AGENT_BRIDGE_HOME,
-  'callback-chat-state.json',
-);
+const ACP_PERMISSION_STRATEGY = process.env.ACP_PERMISSION_STRATEGY || 'allow_once';
+const ACP_STREAM_STDOUT = String(process.env.ACP_STREAM_STDOUT || '').toLowerCase() === 'true';
+const ACP_DEBUG_STREAM = String(process.env.ACP_DEBUG_STREAM || '').toLowerCase() === 'true';
+const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MS || '60000', 10);
+const ACP_PREWARM_RETRY_MS = parseInt(process.env.ACP_PREWARM_RETRY_MS || '30000', 10);
+const GEMINI_KILL_GRACE_MS = parseInt(process.env.GEMINI_KILL_GRACE_MS || '5000', 10);
+const AGENT_BRIDGE_HOME = process.env.AGENT_BRIDGE_HOME || path.join(os.homedir(), '.clawless');
+const MEMORY_FILE_PATH = process.env.MEMORY_FILE_PATH || path.join(AGENT_BRIDGE_HOME, 'MEMORY.md');
+const SCHEDULES_FILE_PATH = process.env.SCHEDULES_FILE_PATH || path.join(AGENT_BRIDGE_HOME, 'schedules.json');
+const CALLBACK_CHAT_STATE_FILE_PATH = path.join(AGENT_BRIDGE_HOME, 'callback-chat-state.json');
 const MEMORY_MAX_CHARS = parseInt(process.env.MEMORY_MAX_CHARS || '12000', 10);
 const CALLBACK_HOST = process.env.CALLBACK_HOST || 'localhost';
 const CALLBACK_PORT = parseInt(process.env.CALLBACK_PORT || '8788', 10);
 const CALLBACK_AUTH_TOKEN = process.env.CALLBACK_AUTH_TOKEN || '';
-const CALLBACK_MAX_BODY_BYTES = parseInt(
-  process.env.CALLBACK_MAX_BODY_BYTES || '65536',
-  10,
-);
+const CALLBACK_MAX_BODY_BYTES = parseInt(process.env.CALLBACK_MAX_BODY_BYTES || '65536', 10);
 
 // Typing indicator refresh interval (platform typing state expires quickly)
-const TYPING_INTERVAL_MS = parseInt(
-  process.env.TYPING_INTERVAL_MS || '4000',
-  10,
-);
-const STREAM_UPDATE_INTERVAL_MS = parseInt(
-  process.env.STREAM_UPDATE_INTERVAL_MS || '5000',
-  10,
-);
+const TYPING_INTERVAL_MS = parseInt(process.env.TYPING_INTERVAL_MS || '4000', 10);
+const STREAM_UPDATE_INTERVAL_MS = parseInt(process.env.STREAM_UPDATE_INTERVAL_MS || '5000', 10);
 const MESSAGE_GAP_THRESHOLD_MS = 15000; // Start a new message if gap between chunks > 5s
 
 // Maximum response length to prevent memory issues
-const MAX_RESPONSE_LENGTH = parseInt(
-  process.env.MAX_RESPONSE_LENGTH || '4000',
-  10,
-);
+const MAX_RESPONSE_LENGTH = parseInt(process.env.MAX_RESPONSE_LENGTH || '4000', 10);
 
-const TELEGRAM_WHITELIST: string[] = parseWhitelistFromEnv(
-  process.env.TELEGRAM_WHITELIST || '',
-);
-const SLACK_WHITELIST: string[] = parseAllowlistFromEnv(
-  process.env.SLACK_WHITELIST || '',
-  'SLACK_WHITELIST',
-);
+const TELEGRAM_WHITELIST: string[] = parseWhitelistFromEnv(process.env.TELEGRAM_WHITELIST || '');
+const SLACK_WHITELIST: string[] = parseAllowlistFromEnv(process.env.SLACK_WHITELIST || '', 'SLACK_WHITELIST');
 const TELEGRAM_WHITELIST_MAX_USERS = 10;
 
 if (MESSAGING_PLATFORM === 'telegram') {
@@ -191,8 +131,7 @@ if (MESSAGING_PLATFORM === 'slack') {
   }
 }
 
-const ACTIVE_USER_WHITELIST =
-  MESSAGING_PLATFORM === 'telegram' ? TELEGRAM_WHITELIST : SLACK_WHITELIST;
+const ACTIVE_USER_WHITELIST = MESSAGING_PLATFORM === 'telegram' ? TELEGRAM_WHITELIST : SLACK_WHITELIST;
 
 type MessagingClient = TelegramMessagingClient | SlackMessagingClient;
 
@@ -227,20 +166,13 @@ function validateGeminiCommandOrExit() {
   });
 
   if ((result as any).error?.code === 'ENOENT') {
-    console.error(
-      `Error: GEMINI_COMMAND executable not found: ${GEMINI_COMMAND}`,
-    );
-    console.error(
-      'Install Gemini CLI or set GEMINI_COMMAND to a valid executable path.',
-    );
+    console.error(`Error: GEMINI_COMMAND executable not found: ${GEMINI_COMMAND}`);
+    console.error('Install Gemini CLI or set GEMINI_COMMAND to a valid executable path.');
     process.exit(1);
   }
 
   if ((result as any).error) {
-    console.error(
-      `Error: failed to execute GEMINI_COMMAND (${GEMINI_COMMAND}):`,
-      (result as any).error.message,
-    );
+    console.error(`Error: failed to execute GEMINI_COMMAND (${GEMINI_COMMAND}):`, (result as any).error.message);
     process.exit(1);
   }
 }
@@ -250,8 +182,7 @@ const handleScheduledJob = createScheduledJobHandler({
   buildPromptWithMemory,
   runScheduledPromptWithTempAcp,
   resolveTargetChatId: () => resolveChatId(lastIncomingChatId),
-  sendTextToChat: (chatId, text) =>
-    messagingClient.sendTextToChat(chatId, text),
+  sendTextToChat: (chatId, text) => messagingClient.sendTextToChat(chatId, text),
   normalizeOutgoingText,
 });
 
@@ -278,9 +209,7 @@ const { startCallbackServer, stopCallbackServer } = createCallbackServer({
 });
 
 function buildPromptWithMemory(userPrompt: string) {
-  const memoryContext =
-    readMemoryContext(MEMORY_FILE_PATH, MEMORY_MAX_CHARS, logInfo) ||
-    '(No saved memory yet)';
+  const memoryContext = readMemoryContext(MEMORY_FILE_PATH, MEMORY_MAX_CHARS, logInfo) || '(No saved memory yet)';
 
   return buildPromptWithMemoryTemplate({
     userPrompt,
@@ -329,10 +258,7 @@ function setupGracefulShutdown() {
   }
 }
 
-async function runScheduledPromptWithTempAcp(
-  promptForGemini: string,
-  scheduleId: string,
-): Promise<string> {
+async function runScheduledPromptWithTempAcp(promptForGemini: string, scheduleId: string): Promise<string> {
   return runPromptWithTempAcp({
     scheduleId,
     promptForGemini,
@@ -396,10 +322,7 @@ logInfo('Starting Clawless server...', {
 validateGeminiCommandOrExit();
 ensureBridgeHomeDirectory(AGENT_BRIDGE_HOME);
 ensureMemoryFile(MEMORY_FILE_PATH, logInfo);
-lastIncomingChatId = loadPersistedCallbackChatId(
-  CALLBACK_CHAT_STATE_FILE_PATH,
-  logInfo,
-);
+lastIncomingChatId = loadPersistedCallbackChatId(CALLBACK_CHAT_STATE_FILE_PATH, logInfo);
 if (lastIncomingChatId) {
   logInfo('Loaded callback chat binding', { chatId: lastIncomingChatId });
 }
@@ -425,9 +348,7 @@ messagingClient
     });
 
     if (MESSAGING_PLATFORM === 'telegram') {
-      console.log(
-        `✅ Telegram authorization enabled. Authorized usernames: ${TELEGRAM_WHITELIST.join(', ')}`,
-      );
+      console.log(`✅ Telegram authorization enabled. Authorized usernames: ${TELEGRAM_WHITELIST.join(', ')}`);
     }
 
     if (MESSAGING_PLATFORM === 'slack') {
@@ -450,17 +371,9 @@ messagingClient
     }
   })
   .catch((error: any) => {
-    if (
-      MESSAGING_PLATFORM === 'telegram' &&
-      error?.response?.error_code === 404 &&
-      error?.on?.method === 'getMe'
-    ) {
-      console.error(
-        'Failed to launch bot: Telegram token is invalid (getMe returned 404 Not Found).',
-      );
-      console.error(
-        'Update TELEGRAM_TOKEN in ~/.clawless/config.json or env and restart.',
-      );
+    if (MESSAGING_PLATFORM === 'telegram' && error?.response?.error_code === 404 && error?.on?.method === 'getMe') {
+      console.error('Failed to launch bot: Telegram token is invalid (getMe returned 404 Not Found).');
+      console.error('Update TELEGRAM_TOKEN in ~/.clawless/config.json or env and restart.');
       process.exit(1);
     }
 

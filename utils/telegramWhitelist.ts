@@ -9,9 +9,7 @@ export function parseAllowlistFromEnv(envValue: string, envKey: string): string[
       return parsed.map((name) => String(name).trim().replace(/^@/, '')).filter(Boolean);
     }
   } catch {
-    console.warn(
-      `Warning: ${envKey} must be a valid JSON array (e.g., ["user1", "user2"])`,
-    );
+    console.warn(`Warning: ${envKey} must be a valid JSON array (e.g., ["user1", "user2"])`);
   }
 
   return [];

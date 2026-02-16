@@ -26,11 +26,9 @@ export function registerTelegramHandlers({
   onChatBound,
 }: RegisterTelegramHandlersParams) {
   messagingClient.onTextMessage(async (messageContext: any) => {
-    const principals = [
-      messageContext.username,
-      messageContext.userId,
-      messageContext.userEmail,
-    ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+    const principals = [messageContext.username, messageContext.userId, messageContext.userEmail].filter(
+      (value): value is string => typeof value === 'string' && value.length > 0,
+    );
 
     const isAuthorized = principals.some((principal) => isUserAuthorized(principal, telegramWhitelist));
 
