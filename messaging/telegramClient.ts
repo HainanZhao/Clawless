@@ -94,7 +94,15 @@ class TelegramMessageContext {
     const chunks = splitTextIntoChunks(formattedText, this.maxMessageLength);
 
     try {
-      await this.updateLiveMessage(messageId, chunks[0] || 'No response received.');
+      await this.ctx.telegram.editMessageText(
+        this.ctx.chat.id,
+        messageId,
+        undefined,
+        chunks[0] || 'No response received.',
+        {
+          parse_mode: TELEGRAM_PARSE_MODE,
+        },
+      );
     } catch (error: any) {
       const errorMessage = String(error?.message || '').toLowerCase();
       if (!errorMessage.includes('message is not modified')) {
