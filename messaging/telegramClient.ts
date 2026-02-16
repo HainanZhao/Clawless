@@ -1,4 +1,20 @@
 import { Telegraf } from 'telegraf';
+import telegramifyMarkdown from 'telegramify-markdown';
+
+const TELEGRAM_PARSE_MODE = 'MarkdownV2' as const;
+
+function toTelegramMarkdown(text: string): string {
+  const normalizedText = String(text || '');
+  if (!normalizedText) {
+    return normalizedText;
+  }
+
+  try {
+    return telegramifyMarkdown(normalizedText, 'escape');
+  } catch {
+    return normalizedText;
+  }
+}
 
 function splitTextIntoChunks(text: string, maxMessageLength: number): string[] {
   const normalizedText = String(text || '');
@@ -52,24 +68,30 @@ class TelegramMessageContext {
   }
 
   async sendText(text: string) {
-    const chunks = splitTextIntoChunks(text, this.maxMessageLength);
+    const formattedText = toTelegramMarkdown(text);
+    const chunks = splitTextIntoChunks(formattedText, this.maxMessageLength);
     for (const chunk of chunks) {
-      await this.ctx.reply(chunk);
+      await this.ctx.reply(chunk, { parse_mode: TELEGRAM_PARSE_MODE });
     }
   }
 
   async startLiveMessage(initialText = '…') {
-    const sent = await this.ctx.reply(initialText);
+    const formattedText = toTelegramMarkdown(initialText || '…');
+    const sent = await this.ctx.reply(formattedText, { parse_mode: TELEGRAM_PARSE_MODE });
     return sent?.message_id as number | undefined;
   }
 
   async updateLiveMessage(messageId: number, text: string) {
-    await this.ctx.telegram.editMessageText(this.ctx.chat.id, messageId, undefined, text || '…');
+    const formattedText = toTelegramMarkdown(text || '…');
+    await this.ctx.telegram.editMessageText(this.ctx.chat.id, messageId, undefined, formattedText, {
+      parse_mode: TELEGRAM_PARSE_MODE,
+    });
   }
 
   async finalizeLiveMessage(messageId: number, text: string) {
     const finalText = text || 'No response received.';
-    const chunks = splitTextIntoChunks(finalText, this.maxMessageLength);
+    const formattedText = toTelegramMarkdown(finalText);
+    const chunks = splitTextIntoChunks(formattedText, this.maxMessageLength);
 
     try {
       await this.updateLiveMessage(messageId, chunks[0] || 'No response received.');
@@ -81,7 +103,7 @@ class TelegramMessageContext {
     }
 
     for (let index = 1; index < chunks.length; index += 1) {
-      await this.ctx.reply(chunks[index]);
+      await this.ctx.reply(chunks[index], { parse_mode: TELEGRAM_PARSE_MODE });
     }
   }
 
@@ -128,9 +150,10 @@ export class TelegramMessagingClient {
   }
 
   async sendTextToChat(chatId: string | number, text: string) {
-    const chunks = splitTextIntoChunks(text, this.maxMessageLength);
+    const formattedText = toTelegramMarkdown(text);
+    const chunks = splitTextIntoChunks(formattedText, this.maxMessageLength);
     for (const chunk of chunks) {
-      await this.bot.telegram.sendMessage(chatId, chunk);
+      await this.bot.telegram.sendMessage(chatId, chunk, { parse_mode: TELEGRAM_PARSE_MODE });
     }
   }
 

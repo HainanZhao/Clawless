@@ -14,10 +14,7 @@ export function getErrorMessage(error: unknown, fallback = 'Unknown error'): str
       return JSON.stringify(error);
     } catch {
       const obj = error as Record<string, unknown>;
-      const constructorName =
-        obj && obj.constructor && typeof obj.constructor.name === 'string'
-          ? obj.constructor.name
-          : 'object';
+      const constructorName = typeof obj?.constructor?.name === 'string' ? obj.constructor.name : 'object';
       const keys = obj ? Object.keys(obj) : [];
       const detailsParts: string[] = [];
       if (constructorName) {

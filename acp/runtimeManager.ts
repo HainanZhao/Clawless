@@ -49,10 +49,7 @@ export function createAcpRuntime({
 }: CreateAcpRuntimeParams) {
   const defaultAcpPrewarmMaxRetries = 10;
   const acpPrewarmMaxRetriesEnv = process.env.ACP_PREWARM_MAX_RETRIES;
-  const parsedAcpPrewarmMaxRetries = Number.parseInt(
-    acpPrewarmMaxRetriesEnv ?? `${defaultAcpPrewarmMaxRetries}`,
-    10,
-  );
+  const parsedAcpPrewarmMaxRetries = Number.parseInt(acpPrewarmMaxRetriesEnv ?? `${defaultAcpPrewarmMaxRetries}`, 10);
   const acpPrewarmMaxRetries = Number.isNaN(parsedAcpPrewarmMaxRetries)
     ? defaultAcpPrewarmMaxRetries
     : parsedAcpPrewarmMaxRetries;
