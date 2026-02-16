@@ -109,8 +109,10 @@ For security, the bot only accepts commands from authorized users. To configure:
 
 3. **Alternative: Use environment variable**:
    ```bash
-  # Must be a valid JSON array string
-  TELEGRAM_WHITELIST='["your_username", "another_user"]'
+   TELEGRAM_WHITELIST='["your_username", "another_user"]'
+
+   # Empty allowlist (blocks all users)
+   TELEGRAM_WHITELIST='[]'
    ```
 
 ⚠️ **Security Note**: If `telegramWhitelist` is empty or not configured, **all users will be blocked** by default. This is a safety measure to prevent unauthorized access.
@@ -174,12 +176,6 @@ nohup clawless > clawless.log 2>&1 &
 ```
 
 For production hosting, use any process manager or platform you prefer (for example: systemd, PM2, Docker, or your cloud runtime).
-
-### Production Mode
-
-```bash
-npm start
-```
 
 ## Advanced Docs
 
