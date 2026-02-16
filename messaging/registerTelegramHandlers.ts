@@ -5,6 +5,8 @@ import { getErrorMessage } from '../utils/error.js';
 type RegisterTelegramHandlersParams = {
   messagingClient: any;
   telegramWhitelist: string[];
+  enforceWhitelist?: boolean;
+  platformLabel?: string;
   hasActiveAcpPrompt: () => boolean;
   cancelActiveAcpPrompt: () => Promise<void>;
   enqueueMessage: (messageContext: any) => Promise<void>;
@@ -15,6 +17,8 @@ type RegisterTelegramHandlersParams = {
 export function registerTelegramHandlers({
   messagingClient,
   telegramWhitelist,
+  enforceWhitelist = true,
+  platformLabel = 'Messaging',
   hasActiveAcpPrompt,
   cancelActiveAcpPrompt,
   enqueueMessage,
@@ -22,9 +26,17 @@ export function registerTelegramHandlers({
   onChatBound,
 }: RegisterTelegramHandlersParams) {
   messagingClient.onTextMessage(async (messageContext: any) => {
-    if (!isUserAuthorized(messageContext.username, telegramWhitelist)) {
+    const principals = [
+      messageContext.username,
+      messageContext.userId,
+      messageContext.userEmail,
+    ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+
+    const isAuthorized = principals.some((principal) => isUserAuthorized(principal, telegramWhitelist));
+
+    if (enforceWhitelist && !isAuthorized) {
       console.warn(
-        `Unauthorized access attempt from username: ${messageContext.username ?? 'none'} (ID: ${messageContext.userId ?? 'unknown'})`,
+        `Unauthorized access attempt from username: ${messageContext.username ?? 'none'} (ID: ${messageContext.userId ?? 'unknown'}, email: ${messageContext.userEmail ?? 'unknown'})`,
       );
       await messageContext.sendText('🚫 Unauthorized. This bot is restricted to authorized users only.');
       return;
@@ -58,7 +70,7 @@ export function registerTelegramHandlers({
   });
 
   messagingClient.onError((error: Error, messageContext: any) => {
-    console.error('Telegram client error:', error);
+    console.error(`${platformLabel} client error:`, error);
     if (messageContext) {
       messageContext.sendText('⚠️ An error occurred while processing your request.').catch(() => {});
     }

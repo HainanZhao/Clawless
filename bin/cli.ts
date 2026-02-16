@@ -6,9 +6,16 @@ import path from 'node:path';
 import process from 'node:process';
 
 const ENV_KEY_MAP: Record<string, string> = {
+  messagingPlatform: 'MESSAGING_PLATFORM',
   telegramToken: 'TELEGRAM_TOKEN',
   telegramWhitelist: 'TELEGRAM_WHITELIST',
+  slackBotToken: 'SLACK_BOT_TOKEN',
+  slackSigningSecret: 'SLACK_SIGNING_SECRET',
+  slackAppToken: 'SLACK_APP_TOKEN',
+  slackWhitelist: 'SLACK_WHITELIST',
+  timezone: 'TZ',
   typingIntervalMs: 'TYPING_INTERVAL_MS',
+  streamUpdateIntervalMs: 'STREAM_UPDATE_INTERVAL_MS',
   geminiCommand: 'GEMINI_COMMAND',
   geminiApprovalMode: 'GEMINI_APPROVAL_MODE',
   geminiModel: 'GEMINI_MODEL',
@@ -16,6 +23,9 @@ const ENV_KEY_MAP: Record<string, string> = {
   geminiTimeoutMs: 'GEMINI_TIMEOUT_MS',
   geminiNoOutputTimeoutMs: 'GEMINI_NO_OUTPUT_TIMEOUT_MS',
   geminiKillGraceMs: 'GEMINI_KILL_GRACE_MS',
+  acpPrewarmRetryMs: 'ACP_PREWARM_RETRY_MS',
+  acpPrewarmMaxRetries: 'ACP_PREWARM_MAX_RETRIES',
+  acpMcpServersJson: 'ACP_MCP_SERVERS_JSON',
   maxResponseLength: 'MAX_RESPONSE_LENGTH',
   acpStreamStdout: 'ACP_STREAM_STDOUT',
   acpDebugStream: 'ACP_DEBUG_STREAM',
@@ -24,6 +34,7 @@ const ENV_KEY_MAP: Record<string, string> = {
   callbackPort: 'CALLBACK_PORT',
   callbackAuthToken: 'CALLBACK_AUTH_TOKEN',
   callbackMaxBodyBytes: 'CALLBACK_MAX_BODY_BYTES',
+  agentBridgeHome: 'AGENT_BRIDGE_HOME',
   ClawlessHome: 'AGENT_BRIDGE_HOME',
   memoryFilePath: 'MEMORY_FILE_PATH',
   memoryMaxChars: 'MEMORY_MAX_CHARS',
@@ -34,9 +45,16 @@ const DEFAULT_CONFIG_PATH = path.join(os.homedir(), '.clawless', 'config.json');
 const DEFAULT_AGENT_BRIDGE_HOME = path.join(os.homedir(), '.clawless');
 const DEFAULT_MEMORY_FILE_PATH = path.join(DEFAULT_AGENT_BRIDGE_HOME, 'MEMORY.md');
 const DEFAULT_CONFIG_TEMPLATE = {
+  messagingPlatform: 'telegram',
   telegramToken: 'your_telegram_bot_token_here',
   telegramWhitelist: [],
+  slackBotToken: '',
+  slackSigningSecret: '',
+  slackAppToken: '',
+  slackWhitelist: [],
+  timezone: 'UTC',
   typingIntervalMs: 4000,
+  streamUpdateIntervalMs: 5000,
   geminiCommand: 'gemini',
   geminiApprovalMode: 'yolo',
   geminiModel: '',
@@ -44,6 +62,9 @@ const DEFAULT_CONFIG_TEMPLATE = {
   geminiTimeoutMs: 1200000,
   geminiNoOutputTimeoutMs: 300000,
   geminiKillGraceMs: 5000,
+  acpPrewarmRetryMs: 30000,
+  acpPrewarmMaxRetries: 10,
+  acpMcpServersJson: '',
   maxResponseLength: 4000,
   acpStreamStdout: false,
   acpDebugStream: false,
@@ -52,7 +73,7 @@ const DEFAULT_CONFIG_TEMPLATE = {
   callbackPort: 8788,
   callbackAuthToken: '',
   callbackMaxBodyBytes: 65536,
-  ClawlessHome: '~/.clawless',
+  agentBridgeHome: '~/.clawless',
   memoryFilePath: '~/.clawless/MEMORY.md',
   memoryMaxChars: 12000,
   schedulesFilePath: '~/.clawless/schedules.json',
@@ -227,7 +248,7 @@ function loadConfigFile(configPath: string) {
   return absolutePath;
 }
 
-try {
+async function main() {
   const args = parseArgs(process.argv.slice(2));
 
   if (args.help) {
@@ -253,8 +274,11 @@ try {
   const postConfigMemoryState = ensureMemoryFromEnv();
   logMemoryFileCreation(postConfigMemoryState);
 
-  await import('../index.js');
-} catch (error: any) {
+  const entryModuleUrl = new URL('../index.js', import.meta.url).href;
+  await import(entryModuleUrl);
+}
+
+main().catch((error: any) => {
   console.error(`[clawless] ${error.message}`);
   process.exit(1);
-}
+});
