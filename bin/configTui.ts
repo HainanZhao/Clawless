@@ -279,8 +279,8 @@ const CONFIG_FIELDS: ConfigField[] = [
     order: 40,
   },
   {
-    key: 'agentBridgeHome',
-    label: 'agentBridgeHome',
+    key: 'clawlessHome',
+    label: 'clawlessHome',
     description: 'Base directory for runtime state files.',
     valueType: 'string',
     isRequired: () => false,

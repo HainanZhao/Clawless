@@ -16,7 +16,7 @@ import { getErrorMessage, logInfo } from './utils/error.js';
 import { parseAllowlistFromEnv, parseWhitelistFromEnv } from './utils/telegramWhitelist.js';
 import { normalizeOutgoingText } from './utils/commandText.js';
 import {
-  ensureBridgeHomeDirectory,
+  ensureClawlessHomeDirectory,
   resolveChatId,
   loadPersistedCallbackChatId,
   persistCallbackChatId,
@@ -104,12 +104,12 @@ const ACP_STREAM_STDOUT = String(process.env.ACP_STREAM_STDOUT || '').toLowerCas
 const ACP_DEBUG_STREAM = String(process.env.ACP_DEBUG_STREAM || '').toLowerCase() === 'true';
 const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MS || '60000', 10);
 const ACP_PREWARM_RETRY_MS = parseInt(process.env.ACP_PREWARM_RETRY_MS || '30000', 10);
-const AGENT_BRIDGE_HOME = expandHomePath(process.env.AGENT_BRIDGE_HOME || path.join(os.homedir(), '.clawless'));
-const MEMORY_FILE_PATH = expandHomePath(process.env.MEMORY_FILE_PATH || path.join(AGENT_BRIDGE_HOME, 'MEMORY.md'));
+const CLAWLESS_HOME = expandHomePath(process.env.CLAWLESS_HOME || path.join(os.homedir(), '.clawless'));
+const MEMORY_FILE_PATH = expandHomePath(process.env.MEMORY_FILE_PATH || path.join(CLAWLESS_HOME, 'MEMORY.md'));
 const SCHEDULES_FILE_PATH = expandHomePath(
-  process.env.SCHEDULES_FILE_PATH || path.join(AGENT_BRIDGE_HOME, 'schedules.json'),
+  process.env.SCHEDULES_FILE_PATH || path.join(CLAWLESS_HOME, 'schedules.json'),
 );
-const CALLBACK_CHAT_STATE_FILE_PATH = path.join(AGENT_BRIDGE_HOME, 'callback-chat-state.json');
+const CALLBACK_CHAT_STATE_FILE_PATH = path.join(CLAWLESS_HOME, 'callback-chat-state.json');
 const MEMORY_MAX_CHARS = parseInt(process.env.MEMORY_MAX_CHARS || '12000', 10);
 const CALLBACK_HOST = process.env.CALLBACK_HOST || 'localhost';
 const CALLBACK_PORT = parseInt(process.env.CALLBACK_PORT || '8788', 10);
@@ -120,7 +120,7 @@ const CALLBACK_MAX_BODY_BYTES = parseInt(process.env.CALLBACK_MAX_BODY_BYTES || 
 const CONVERSATION_HISTORY_ENABLED =
   String(process.env.CONVERSATION_HISTORY_ENABLED || 'true').toLowerCase() === 'true';
 const CONVERSATION_HISTORY_FILE_PATH = expandHomePath(
-  process.env.CONVERSATION_HISTORY_FILE_PATH || path.join(AGENT_BRIDGE_HOME, 'conversation-history.jsonl'),
+  process.env.CONVERSATION_HISTORY_FILE_PATH || path.join(CLAWLESS_HOME, 'conversation-history.jsonl'),
 );
 const CONVERSATION_HISTORY_MAX_ENTRIES = parseInt(process.env.CONVERSATION_HISTORY_MAX_ENTRIES || '100', 10);
 const CONVERSATION_HISTORY_MAX_CHARS_PER_ENTRY = parseInt(
@@ -132,7 +132,7 @@ const CONVERSATION_HISTORY_RECAP_TOP_K = parseInt(process.env.CONVERSATION_HISTO
 const CONVERSATION_SEMANTIC_RECALL_ENABLED =
   String(process.env.CONVERSATION_SEMANTIC_RECALL_ENABLED || 'true').toLowerCase() === 'true';
 const CONVERSATION_SEMANTIC_STORE_PATH = expandHomePath(
-  process.env.CONVERSATION_SEMANTIC_STORE_PATH || path.join(AGENT_BRIDGE_HOME, 'conversation-semantic-memory.db'),
+  process.env.CONVERSATION_SEMANTIC_STORE_PATH || path.join(CLAWLESS_HOME, 'conversation-semantic-memory.db'),
 );
 const CONVERSATION_SEMANTIC_MAX_ENTRIES = parseInt(process.env.CONVERSATION_SEMANTIC_MAX_ENTRIES || '1000', 10);
 const CONVERSATION_SEMANTIC_MAX_CHARS_PER_ENTRY = parseInt(
@@ -243,7 +243,7 @@ const cliAgent = createCliAgent(cliAgentType, {
   command: agentCommand,
   approvalMode: CLI_AGENT_APPROVAL_MODE,
   model: CLI_AGENT_MODEL,
-  includeDirectories: [AGENT_BRIDGE_HOME, os.homedir()],
+  includeDirectories: [CLAWLESS_HOME, os.homedir()],
   killGraceMs: CLI_AGENT_KILL_GRACE_MS,
 });
 
@@ -397,7 +397,7 @@ registerTelegramHandlers({
     persistCallbackChatId(
       CALLBACK_CHAT_STATE_FILE_PATH,
       chatId,
-      () => ensureBridgeHomeDirectory(AGENT_BRIDGE_HOME),
+      () => ensureClawlessHomeDirectory(CLAWLESS_HOME),
       logInfo,
     );
   },
@@ -412,7 +412,7 @@ logInfo('Starting Clawless server...', {
   cliAgent: cliAgent.getDisplayName(),
 });
 validateCliAgentOrExit();
-ensureBridgeHomeDirectory(AGENT_BRIDGE_HOME);
+ensureClawlessHomeDirectory(CLAWLESS_HOME);
 ensureMemoryFile(MEMORY_FILE_PATH, logInfo);
 if (CONVERSATION_HISTORY_ENABLED) {
   ensureConversationHistoryFile(CONVERSATION_HISTORY_FILE_PATH, logInfo);

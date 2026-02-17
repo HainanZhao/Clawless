@@ -32,7 +32,7 @@ This document lists `config.json` keys, defaults, and what each setting controls
 | `callbackPort` | `8788` | Bind port for local callback/API server. |
 | `callbackAuthToken` | `""` | Optional auth token for callback and local API routes. |
 | `callbackMaxBodyBytes` | `65536` | Max accepted callback/API request body size. |
-| `agentBridgeHome` | `~/.clawless` | Base directory for runtime state files. |
+| `clawlessHome` | `~/.clawless` | Base directory for runtime state files. |
 | `memoryFilePath` | `~/.clawless/MEMORY.md` | Persistent memory note file injected into prompt context. |
 | `memoryMaxChars` | `12000` | Max memory-file characters included in prompt context. |
 | `conversationHistoryEnabled` | `true` | Enable/disable conversation history tracking. |

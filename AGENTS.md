@@ -98,7 +98,7 @@ Canonical config/env key mapping is documented in [README.md](README.md) under â
 | `CALLBACK_PORT` | No | 8788 | Bind port for callback server |
 | `CALLBACK_AUTH_TOKEN` | No | - | Optional bearer/token guard for callback endpoint |
 | `CALLBACK_MAX_BODY_BYTES` | No | 65536 | Maximum accepted callback request body size |
-| `AGENT_BRIDGE_HOME` | No | ~/.clawless | Home directory for runtime files |
+| `CLAWLESS_HOME` | No | ~/.clawless | Home directory for runtime files |
 | `MEMORY_FILE_PATH` | No | ~/.clawless/MEMORY.md | Persistent memory file path injected into agent prompt context |
 | `MEMORY_MAX_CHARS` | No | 12000 | Max memory-file characters injected into prompt context |
 | `CONVERSATION_HISTORY_ENABLED` | No | true | Enable/disable conversation history tracking and injection |
