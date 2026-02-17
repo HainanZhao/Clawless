@@ -12,6 +12,7 @@ import { createCallbackServer } from './core/callbackServer.js';
 import { runPromptWithTempAcp } from './acp/tempAcpRunner.js';
 import { createAcpRuntime } from './acp/runtimeManager.js';
 import { buildPermissionResponse, noOpAcpFileOperation } from './acp/clientHelpers.js';
+import { createCliAgent, validateAgentType, SUPPORTED_AGENTS } from './core/agents/index.js';
 import { getErrorMessage, logInfo } from './utils/error.js';
 import { parseAllowlistFromEnv, parseWhitelistFromEnv } from './utils/telegramWhitelist.js';
 import { normalizeOutgoingText } from './utils/commandText.js';
@@ -86,17 +87,25 @@ if (MESSAGING_PLATFORM === 'slack') {
   }
 }
 
-const GEMINI_COMMAND = process.env.GEMINI_COMMAND || 'gemini';
-const GEMINI_TIMEOUT_MS = parseInt(process.env.GEMINI_TIMEOUT_MS || '1200000', 10);
-const GEMINI_NO_OUTPUT_TIMEOUT_MS = parseInt(process.env.GEMINI_NO_OUTPUT_TIMEOUT_MS || '300000', 10);
-const GEMINI_APPROVAL_MODE = process.env.GEMINI_APPROVAL_MODE || 'yolo';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || '';
+// CLI Agent configuration
+const CLI_AGENT = (process.env.CLI_AGENT || 'gemini').trim().toLowerCase();
+const CLI_AGENT_COMMAND = process.env.CLI_AGENT_COMMAND || (CLI_AGENT === 'opencode' ? 'opencode' : 'gemini');
+const CLI_AGENT_TIMEOUT_MS = parseInt(process.env.CLI_AGENT_TIMEOUT_MS || process.env.GEMINI_TIMEOUT_MS || '1200000', 10);
+const CLI_AGENT_NO_OUTPUT_TIMEOUT_MS = parseInt(
+  process.env.CLI_AGENT_NO_OUTPUT_TIMEOUT_MS || process.env.GEMINI_NO_OUTPUT_TIMEOUT_MS || '300000',
+  10,
+);
+const CLI_AGENT_APPROVAL_MODE = process.env.CLI_AGENT_APPROVAL_MODE || process.env.GEMINI_APPROVAL_MODE || 'yolo';
+const CLI_AGENT_MODEL = process.env.CLI_AGENT_MODEL || process.env.GEMINI_MODEL || '';
+const CLI_AGENT_KILL_GRACE_MS = parseInt(
+  process.env.CLI_AGENT_KILL_GRACE_MS || process.env.GEMINI_KILL_GRACE_MS || '5000',
+  10,
+);
 const ACP_PERMISSION_STRATEGY = process.env.ACP_PERMISSION_STRATEGY || 'allow_once';
 const ACP_STREAM_STDOUT = String(process.env.ACP_STREAM_STDOUT || '').toLowerCase() === 'true';
 const ACP_DEBUG_STREAM = String(process.env.ACP_DEBUG_STREAM || '').toLowerCase() === 'true';
 const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MS || '60000', 10);
 const ACP_PREWARM_RETRY_MS = parseInt(process.env.ACP_PREWARM_RETRY_MS || '30000', 10);
-const GEMINI_KILL_GRACE_MS = parseInt(process.env.GEMINI_KILL_GRACE_MS || '5000', 10);
 const AGENT_BRIDGE_HOME = expandHomePath(process.env.AGENT_BRIDGE_HOME || path.join(os.homedir(), '.clawless'));
 const MEMORY_FILE_PATH = expandHomePath(process.env.MEMORY_FILE_PATH || path.join(AGENT_BRIDGE_HOME, 'MEMORY.md'));
 const SCHEDULES_FILE_PATH = expandHomePath(
@@ -222,21 +231,28 @@ const semanticConversationMemoryConfig: SemanticConversationMemoryConfig = {
 
 const semanticConversationMemory = new SemanticConversationMemory(semanticConversationMemoryConfig, logInfo);
 
-function validateGeminiCommandOrExit() {
-  const result = spawnSync(GEMINI_COMMAND, ['--version'], {
-    stdio: 'ignore',
-    timeout: 10000,
-    killSignal: 'SIGKILL',
-  });
+// Initialize CLI Agent
+let cliAgentType;
+try {
+  cliAgentType = validateAgentType(CLI_AGENT);
+} catch (error: any) {
+  console.error(`Error: ${error.message}`);
+  console.error(`Available agents: ${SUPPORTED_AGENTS.join(', ')}`);
+  process.exit(1);
+}
 
-  if ((result as any).error?.code === 'ENOENT') {
-    console.error(`Error: GEMINI_COMMAND executable not found: ${GEMINI_COMMAND}`);
-    console.error('Install Gemini CLI or set GEMINI_COMMAND to a valid executable path.');
-    process.exit(1);
-  }
+const cliAgent = createCliAgent(cliAgentType, {
+  command: CLI_AGENT_COMMAND,
+  approvalMode: CLI_AGENT_APPROVAL_MODE,
+  model: CLI_AGENT_MODEL,
+  includeDirectories: [AGENT_BRIDGE_HOME, os.homedir()],
+  killGraceMs: CLI_AGENT_KILL_GRACE_MS,
+});
 
-  if ((result as any).error) {
-    console.error(`Error: failed to execute GEMINI_COMMAND (${GEMINI_COMMAND}):`, (result as any).error.message);
+function validateCliAgentOrExit() {
+  const validation = cliAgent.validate();
+  if (!validation.valid) {
+    console.error(`Error: ${validation.error}`);
     process.exit(1);
   }
 }
@@ -291,17 +307,13 @@ async function buildPromptWithMemory(userPrompt: string): Promise<string> {
 }
 
 const acpRuntime = createAcpRuntime({
-  geminiCommand: GEMINI_COMMAND,
-  includeDirectories: [AGENT_BRIDGE_HOME, os.homedir()],
-  geminiApprovalMode: GEMINI_APPROVAL_MODE,
-  geminiModel: GEMINI_MODEL,
+  cliAgent,
   acpPermissionStrategy: ACP_PERMISSION_STRATEGY,
   acpStreamStdout: ACP_STREAM_STDOUT,
   acpDebugStream: ACP_DEBUG_STREAM,
-  acpTimeoutMs: GEMINI_TIMEOUT_MS,
-  acpNoOutputTimeoutMs: GEMINI_NO_OUTPUT_TIMEOUT_MS,
+  acpTimeoutMs: CLI_AGENT_TIMEOUT_MS,
+  acpNoOutputTimeoutMs: CLI_AGENT_NO_OUTPUT_TIMEOUT_MS,
   acpPrewarmRetryMs: ACP_PREWARM_RETRY_MS,
-  geminiKillGraceMs: GEMINI_KILL_GRACE_MS,
   stderrTailMaxChars: GEMINI_STDERR_TAIL_MAX,
   buildPromptWithMemory,
   ensureMemoryFile: () => ensureMemoryFile(MEMORY_FILE_PATH, logInfo),
@@ -325,15 +337,14 @@ function setupGracefulShutdown() {
   }
 }
 
-async function runScheduledPromptWithTempAcp(promptForGemini: string, scheduleId: string): Promise<string> {
+async function runScheduledPromptWithTempAcp(promptForAgent: string, scheduleId: string): Promise<string> {
   return runPromptWithTempAcp({
     scheduleId,
-    promptForGemini,
-    command: GEMINI_COMMAND,
-    args: acpRuntime.buildGeminiAcpArgs(),
+    promptForAgent,
+    cliAgent,
     cwd: process.cwd(),
-    timeoutMs: GEMINI_TIMEOUT_MS,
-    noOutputTimeoutMs: GEMINI_NO_OUTPUT_TIMEOUT_MS,
+    timeoutMs: CLI_AGENT_TIMEOUT_MS,
+    noOutputTimeoutMs: CLI_AGENT_NO_OUTPUT_TIMEOUT_MS,
     permissionStrategy: ACP_PERMISSION_STRATEGY,
     stderrTailMaxChars: GEMINI_STDERR_TAIL_MAX,
     logInfo,
@@ -400,8 +411,9 @@ setupGracefulShutdown();
 // Launch the bot
 logInfo('Starting Clawless server...', {
   messagingPlatform: MESSAGING_PLATFORM,
+  cliAgent: cliAgent.getDisplayName(),
 });
-validateGeminiCommandOrExit();
+validateCliAgentOrExit();
 ensureBridgeHomeDirectory(AGENT_BRIDGE_HOME);
 ensureMemoryFile(MEMORY_FILE_PATH, logInfo);
 if (CONVERSATION_HISTORY_ENABLED) {
@@ -424,10 +436,12 @@ messagingClient
   .then(async () => {
     logInfo('Bot launched successfully', {
       messagingPlatform: MESSAGING_PLATFORM,
+      cliAgent: cliAgent.getDisplayName(),
+      cliAgentCommand: cliAgent.getCommand(),
       typingIntervalMs: TYPING_INTERVAL_MS,
       streamUpdateIntervalMs: STREAM_UPDATE_INTERVAL_MS,
-      geminiTimeoutMs: GEMINI_TIMEOUT_MS,
-      geminiNoOutputTimeoutMs: GEMINI_NO_OUTPUT_TIMEOUT_MS,
+      agentTimeoutMs: CLI_AGENT_TIMEOUT_MS,
+      agentNoOutputTimeoutMs: CLI_AGENT_NO_OUTPUT_TIMEOUT_MS,
       heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
       acpPrewarmRetryMs: ACP_PREWARM_RETRY_MS,
       memoryFilePath: MEMORY_FILE_PATH,
@@ -439,8 +453,8 @@ messagingClient
       conversationSemanticStorePath: CONVERSATION_SEMANTIC_RECALL_ENABLED ? CONVERSATION_SEMANTIC_STORE_PATH : 'n/a',
       callbackHost: CALLBACK_HOST,
       callbackPort: CALLBACK_PORT,
-      mcpSkillsSource: 'local Gemini CLI defaults (no MCP override)',
-      acpMode: `${GEMINI_COMMAND} --experimental-acp`,
+      mcpSkillsSource: `local ${cliAgent.getDisplayName()} defaults (no MCP override)`,
+      acpMode: `${cliAgent.getCommand()} --experimental-acp`,
       authorizedUsers: `${ACTIVE_USER_WHITELIST.length} user(s) authorized`,
     });
 
@@ -462,7 +476,7 @@ messagingClient
         logInfo('Heartbeat', {
           queueLength: getQueueLength(),
           acpSessionReady: runtimeState.acpSessionReady,
-          geminiProcessRunning: runtimeState.geminiProcessRunning,
+          agentProcessRunning: runtimeState.agentProcessRunning,
         });
       }, HEARTBEAT_INTERVAL_MS);
     }
