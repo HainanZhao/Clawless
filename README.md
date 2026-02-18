@@ -208,9 +208,9 @@ For security, the bot only accepts commands from authorized users. To configure:
 
 ⚠️ **Security Note**: In Telegram mode, `telegramWhitelist` / `TELEGRAM_WHITELIST` must be configured and non-empty or startup will fail. Keep the list small (max 10 users) for safety.
 
-For Slack mode, configure allowed Slack principals (user IDs or emails) with `slackWhitelist` in `~/.clawless/config.json`.
+For Slack mode, configure allowed Slack principals (user IDs) with `slackWhitelist` in `~/.clawless/config.json`.
 
-⚠️ **Security Note**: In Slack mode, `slackWhitelist` / `SLACK_WHITELIST` must be configured and non-empty or startup will fail. Keep the list small (max 10 users). Email matching requires OAuth scopes `users:read` and `users:read.email`.
+⚠️ **Security Note**: In Slack mode, `slackWhitelist` / `SLACK_WHITELIST` must be configured and non-empty or startup will fail. Keep the list small (max 10 users).
 
 ## Usage
 

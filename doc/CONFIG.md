@@ -10,7 +10,7 @@ This document lists `config.json` keys, defaults, and what each setting controls
 | `slackBotToken` | `""` | Slack bot token (required in Slack mode). |
 | `slackSigningSecret` | `""` | Slack signing secret (required in Slack mode). |
 | `slackAppToken` | `""` | Optional Slack Socket Mode app token. |
-| `slackWhitelist` | `[]` | Allowed Slack user IDs/emails (required and non-empty in Slack mode). |
+| `slackWhitelist` | `[]` | Allowed Slack user IDs (required and non-empty in Slack mode). |
 | `timezone` | `UTC` | Timezone used by scheduler cron execution. |
 | `typingIntervalMs` | `4000` | Typing indicator refresh interval while processing. |
 | `streamUpdateIntervalMs` | `5000` | Minimum interval between progressive streaming message updates. |
@@ -27,7 +27,7 @@ This document lists `config.json` keys, defaults, and what each setting controls
 | `acpStreamStdout` | `false` | Emit raw ACP stream chunks to stdout. |
 | `acpDebugStream` | `false` | Emit structured ACP stream debug logs. |
 | `maxResponseLength` | `4000` | Max outbound response length in characters. |
-| `heartbeatIntervalMs` | `60000` | Heartbeat log interval (`0` disables heartbeat logs). |
+| `heartbeatIntervalMs` | `300000` | Heartbeat log interval (`0` disables heartbeat logs). |
 | `callbackHost` | `localhost` | Bind host for local callback/API server. |
 | `callbackPort` | `8788` | Bind port for local callback/API server. |
 | `callbackAuthToken` | `""` | Optional auth token for callback and local API routes. |

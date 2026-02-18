@@ -102,7 +102,7 @@ const CLI_AGENT_KILL_GRACE_MS = parseInt(process.env.CLI_AGENT_KILL_GRACE_MS || 
 const ACP_PERMISSION_STRATEGY = process.env.ACP_PERMISSION_STRATEGY || 'allow_once';
 const ACP_STREAM_STDOUT = String(process.env.ACP_STREAM_STDOUT || '').toLowerCase() === 'true';
 const ACP_DEBUG_STREAM = String(process.env.ACP_DEBUG_STREAM || '').toLowerCase() === 'true';
-const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MS || '60000', 10);
+const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MS || '300000', 10);
 const ACP_PREWARM_RETRY_MS = parseInt(process.env.ACP_PREWARM_RETRY_MS || '30000', 10);
 const CLAWLESS_HOME = expandHomePath(process.env.CLAWLESS_HOME || path.join(os.homedir(), '.clawless'));
 const MEMORY_FILE_PATH = expandHomePath(process.env.MEMORY_FILE_PATH || path.join(CLAWLESS_HOME, 'MEMORY.md'));
@@ -460,9 +460,7 @@ messagingClient
     }
 
     if (MESSAGING_PLATFORM === 'slack') {
-      console.log(
-        `✅ Slack authorization enabled. Authorized principals (IDs or emails): ${SLACK_WHITELIST.join(', ')}`,
-      );
+      console.log(`✅ Slack authorization enabled. Authorized principals (user IDs): ${SLACK_WHITELIST.join(', ')}`);
     }
 
     acpRuntime.scheduleAcpPrewarm('post-launch');

@@ -93,7 +93,7 @@ Canonical config/env key mapping is documented in [README.md](README.md) under â
 | `ACP_STREAM_STDOUT` | No | false | Writes raw ACP text chunks to stdout as they arrive |
 | `ACP_DEBUG_STREAM` | No | false | Writes structured ACP chunk timing/count debug logs |
 | `MAX_RESPONSE_LENGTH` | No | 4000 | Maximum response length in characters |
-| `HEARTBEAT_INTERVAL_MS` | No | 60000 | Server heartbeat log interval in milliseconds (`0` disables logs) |
+| `HEARTBEAT_INTERVAL_MS` | No | 300000 | Server heartbeat log interval in milliseconds (`0` disables logs) |
 | `CALLBACK_HOST` | No | 127.0.0.1 | Bind address for callback server |
 | `CALLBACK_PORT` | No | 8788 | Bind port for callback server |
 | `CALLBACK_AUTH_TOKEN` | No | - | Optional bearer/token guard for callback endpoint |

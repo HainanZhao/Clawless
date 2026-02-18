@@ -22,7 +22,7 @@
   "acpStreamStdout": false,
   "acpDebugStream": false,
   "maxResponseLength": 4000,
-  "heartbeatIntervalMs": 60000,
+  "heartbeatIntervalMs": 300000,
   "callbackHost": "localhost",
   "callbackPort": 8788,
   "callbackAuthToken": "",

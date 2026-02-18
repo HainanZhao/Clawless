@@ -4,7 +4,6 @@ import { slackifyMarkdown } from 'slackify-markdown';
 type SlackEvent = {
   channel: string;
   user?: string;
-  userEmail?: string;
   text?: string;
   ts?: string;
   thread_ts?: string;
@@ -54,7 +53,6 @@ class SlackMessageContext {
   text: string;
   chatId: string | undefined;
   userId: string | undefined;
-  userEmail: string | undefined;
   private typingInterval: NodeJS.Timeout | null = null;
   private liveMessageTextByTs = new Map<string, string>();
 
@@ -66,7 +64,6 @@ class SlackMessageContext {
     this.text = event.text || '';
     this.chatId = event.channel;
     this.userId = event.user;
-    this.userEmail = event.userEmail;
   }
 
   startTyping() {
@@ -178,7 +175,6 @@ export class SlackMessagingClient {
   maxMessageLength: number;
   private messageHandlers: Array<(messageContext: SlackMessageContext) => Promise<void> | void> = [];
   private errorHandlers: Array<(error: Error, messageContext: SlackMessageContext | null) => void> = [];
-  private userEmailCache = new Map<string, string | undefined>();
 
   constructor({
     token,
@@ -213,9 +209,6 @@ export class SlackMessagingClient {
       // Only handle regular messages (not bot messages)
       if (message.subtype === undefined && 'text' in message) {
         const slackEvent = message as SlackEvent;
-        if (slackEvent.user) {
-          slackEvent.userEmail = await this.resolveUserEmail(slackEvent.user);
-        }
 
         const messageContext = new SlackMessageContext(
           slackEvent,
@@ -257,27 +250,6 @@ export class SlackMessagingClient {
         console.error('Error handler itself failed:', handlerError);
       }
     }
-  }
-
-  private async resolveUserEmail(userId: string): Promise<string | undefined> {
-    if (this.userEmailCache.has(userId)) {
-      return this.userEmailCache.get(userId);
-    }
-
-    let email: string | undefined;
-
-    try {
-      const userInfo = await this.app.client.users.info({ user: userId });
-      const rawEmail = (userInfo as any)?.user?.profile?.email;
-      if (typeof rawEmail === 'string' && rawEmail.trim().length > 0) {
-        email = rawEmail.trim().toLowerCase();
-      }
-    } catch {
-      email = undefined;
-    }
-
-    this.userEmailCache.set(userId, email);
-    return email;
   }
 
   async launch() {
