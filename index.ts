@@ -87,12 +87,7 @@ if (MESSAGING_PLATFORM === 'slack') {
 }
 
 // CLI Agent configuration
-const CLI_AGENT_RAW = (process.env.CLI_AGENT || '').trim();
-if (!CLI_AGENT_RAW) {
-  console.error("Error: CLI_AGENT is required. Set it to 'gemini' or 'opencode'.");
-  process.exit(1);
-}
-const CLI_AGENT = CLI_AGENT_RAW.toLowerCase();
+const CLI_AGENT = (process.env.CLI_AGENT || 'gemini').trim().toLowerCase();
 const agentCommand = CLI_AGENT === 'opencode' ? 'opencode' : 'gemini';
 const CLI_AGENT_TIMEOUT_MS = parseInt(process.env.CLI_AGENT_TIMEOUT_MS || '1200000', 10);
 const CLI_AGENT_NO_OUTPUT_TIMEOUT_MS = parseInt(process.env.CLI_AGENT_NO_OUTPUT_TIMEOUT_MS || '300000', 10);
