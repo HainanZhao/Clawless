@@ -30,6 +30,7 @@ TELEGRAM_TOKEN=your_bot_token_here
 # CLI Agent Selection (default: gemini)
 CLI_AGENT=gemini
 # CLI_AGENT=opencode
+# CLI_AGENT=claude (requires: npm install @zed-industries/claude-agent-acp)
 
 # CLI Agent settings
 TYPING_INTERVAL_MS=4000
@@ -83,7 +84,7 @@ Canonical config/env key mapping is documented in [README.md](README.md) under â
 | `TELEGRAM_WHITELIST` | Yes (telegram) | - | List of authorized Telegram usernames. Must be a non-empty JSON array and should stay small (max 10 users). Format: `["username1", "username2"]` |
 | `TYPING_INTERVAL_MS` | No | 4000 | Interval (in milliseconds) for refreshing typing status |
 | `STREAM_UPDATE_INTERVAL_MS` | No | 5000 | Interval (in milliseconds) between progressive response message updates |
-| `CLI_AGENT` | No | gemini | CLI agent type to use (`gemini` or `opencode`) |
+| `CLI_AGENT` | No | gemini | CLI agent type to use (`gemini`, `opencode`, or `claude`) |
 | `CLI_AGENT_TIMEOUT_MS` | No | 1200000 | Overall timeout for a single CLI agent run |
 | `CLI_AGENT_NO_OUTPUT_TIMEOUT_MS` | No | 300000 | Idle timeout; aborts if CLI agent emits no output for this duration |
 | `CLI_AGENT_KILL_GRACE_MS` | No | 5000 | Grace period after SIGTERM before escalating CLI agent child process shutdown to SIGKILL |
@@ -353,7 +354,7 @@ To add support for a new ACP-capable CLI agent:
 
 2. Add the agent to `core/agents/agentFactory.ts`:
    ```typescript
-   export type AgentType = 'gemini' | 'opencode' | 'mynewagent';
+   export type AgentType = 'gemini' | 'opencode' | 'claude' | 'mynewagent';
    
    export function createCliAgent(agentType: AgentType, config: CliAgentConfig): BaseCliAgent {
      switch (agentType) {
@@ -361,6 +362,8 @@ To add support for a new ACP-capable CLI agent:
          return new GeminiAgent(config);
        case 'opencode':
          return new OpencodeAgent(config);
+       case 'claude':
+         return new ClaudeCodeAgent(config);
        case 'mynewagent':
          return new MyNewAgent(config);
        // ...
