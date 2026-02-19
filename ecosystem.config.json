@@ -12,7 +12,8 @@
       "min_uptime": "10s",
       "max_memory_restart": "500M",
       "env": {
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "CLI_AGENT": "gemini"
       },
       "error_file": "./logs/err.log",
       "out_file": "./logs/out.log",
