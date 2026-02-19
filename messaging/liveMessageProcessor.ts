@@ -1,3 +1,5 @@
+import { debounce } from 'lodash-es';
+
 type LogInfoFn = (message: string, details?: unknown) => void;
 
 type ProcessSingleMessageParams = {
@@ -33,19 +35,11 @@ export async function processSingleTelegramMessage({
   const stopTypingIndicator = messageContext.startTyping();
   let liveMessageId: string | number | undefined;
   let previewBuffer = '';
-  let flushTimer: NodeJS.Timeout | null = null;
   let lastFlushAt = Date.now();
   let lastChunkAt = 0;
   let finalizedViaLiveMessage = false;
   let startingLiveMessage: Promise<void> | null = null;
   let promptCompleted = false;
-
-  const clearFlushTimer = () => {
-    if (flushTimer) {
-      clearTimeout(flushTimer);
-      flushTimer = null;
-    }
-  };
 
   const previewText = () => {
     if (previewBuffer.length <= maxResponseLength) {
@@ -117,17 +111,15 @@ export async function processSingleTelegramMessage({
     }
   };
 
-  const scheduleFlush = () => {
-    if (flushTimer) {
-      return;
-    }
-
-    const dueIn = Math.max(0, streamUpdateIntervalMs - (Date.now() - lastFlushAt));
-    flushTimer = setTimeout(async () => {
-      flushTimer = null;
+  // Create a debounced flush function using lodash
+  // This will only execute after no chunks have been received for streamUpdateIntervalMs
+  const debouncedFlush = debounce(
+    async () => {
       await flushPreview(true);
-    }, dueIn);
-  };
+    },
+    streamUpdateIntervalMs,
+    { leading: false, trailing: true },
+  );
 
   const finalizeCurrentMessage = async () => {
     if (!liveMessageId) {
@@ -140,7 +132,7 @@ export async function processSingleTelegramMessage({
       } catch (_) {}
     }
 
-    clearFlushTimer();
+    debouncedFlush.cancel();
     await flushPreview(true, false);
 
     try {
@@ -176,11 +168,11 @@ export async function processSingleTelegramMessage({
 
       lastChunkAt = now;
       previewBuffer += chunk;
-      void scheduleFlush();
+      void debouncedFlush();
     });
     promptCompleted = true;
 
-    clearFlushTimer();
+    debouncedFlush.cancel();
     await flushPreview(true);
 
     if (startingLiveMessage) {
@@ -225,7 +217,7 @@ export async function processSingleTelegramMessage({
       }
     }
   } finally {
-    clearFlushTimer();
+    debouncedFlush.cancel();
     if (liveMessageId && !finalizedViaLiveMessage && !promptCompleted) {
       try {
         await messageContext.removeMessage(liveMessageId);
