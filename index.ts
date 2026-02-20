@@ -105,7 +105,7 @@ const CLI_AGENT_TIMEOUT_MS = parseInt(process.env.CLI_AGENT_TIMEOUT_MS || '12000
 const CLI_AGENT_NO_OUTPUT_TIMEOUT_MS = parseInt(process.env.CLI_AGENT_NO_OUTPUT_TIMEOUT_MS || '300000', 10);
 const CLI_AGENT_APPROVAL_MODE = process.env.CLI_AGENT_APPROVAL_MODE || 'yolo';
 const CLI_AGENT_MODEL = process.env.CLI_AGENT_MODEL || '';
-const CLI_AGENT_KILL_GRACE_MS = parseInt(process.env.CLI_AGENT_KILL_GRACE_MS || '5000', 10);
+const CLI_AGENT_KILL_GRACE_MS = parseInt(process.env.CLI_AGENT_KILL_GRACE_MS || '10000', 10);
 const ACP_PERMISSION_STRATEGY = process.env.ACP_PERMISSION_STRATEGY || 'allow_once';
 const ACP_STREAM_STDOUT = String(process.env.ACP_STREAM_STDOUT || '').toLowerCase() === 'true';
 const ACP_DEBUG_STREAM = String(process.env.ACP_DEBUG_STREAM || '').toLowerCase() === 'true';
