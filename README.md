@@ -1,6 +1,6 @@
 # Clawless — Bring Your Own Agent (Interface + ACP)
 
-![Clawless](doc/Clawless.jpg)
+<img src="doc/Clawless.jpg" alt="Clawless" width="300" height="300" />
 
 Clawless is a lightweight bridge that connects your favorite local AI agent CLI to Telegram or Slack. Keep your tools, swap runtimes, avoid lock-in.
 
