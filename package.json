@@ -15,6 +15,7 @@
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
+    "prepublishOnly": "npm run build",
     "callback:health": "./scripts/callback-health.sh",
     "callback:test": "./scripts/callback-post.sh",
     "callback:test:chat": "./scripts/callback-post-chat.sh"
