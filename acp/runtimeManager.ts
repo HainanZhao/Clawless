@@ -31,6 +31,20 @@ type CreateAcpRuntimeParams = {
   logInfo: LogInfoFn;
 };
 
+export type AcpRuntime = {
+  buildAgentAcpArgs: () => string[];
+  runAcpPrompt: (promptText: string, onChunk?: (chunk: string) => void) => Promise<string>;
+  scheduleAcpPrewarm: (reason: string) => void;
+  shutdownAcpRuntime: (reason: string) => Promise<void>;
+  cancelActiveAcpPrompt: () => Promise<void>;
+  hasActiveAcpPrompt: () => boolean;
+  requestManualAbort: () => void;
+  getRuntimeState: () => {
+    acpSessionReady: boolean;
+    agentProcessRunning: boolean;
+  };
+};
+
 export function createAcpRuntime({
   cliAgent,
   acpPermissionStrategy,
@@ -48,7 +62,7 @@ export function createAcpRuntime({
   noOpAcpFileOperation,
   getErrorMessage,
   logInfo,
-}: CreateAcpRuntimeParams) {
+}: CreateAcpRuntimeParams): AcpRuntime {
   const agentCommand = cliAgent.getCommand();
   const agentDisplayName = cliAgent.getDisplayName();
   const commandToken = agentCommand.split(/[\\/]/).pop() || agentCommand;
