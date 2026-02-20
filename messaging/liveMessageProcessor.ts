@@ -10,6 +10,7 @@ type ProcessSingleMessageParams = {
   messageGapThresholdMs: number;
   acpDebugStream: boolean;
   runAcpPrompt: (promptText: string, onChunk?: (chunk: string) => void) => Promise<string>;
+  scheduleAsyncJob: (message: string, chatId: string) => Promise<void>;
   logInfo: LogInfoFn;
   getErrorMessage: (error: unknown, fallbackMessage?: string) => string;
   onConversationComplete?: (userMessage: string, botResponse: string, chatId: string) => void;
@@ -23,6 +24,7 @@ export async function processSingleTelegramMessage({
   messageGapThresholdMs,
   acpDebugStream,
   runAcpPrompt,
+  scheduleAsyncJob,
   logInfo,
   getErrorMessage,
   onConversationComplete,
@@ -40,6 +42,39 @@ export async function processSingleTelegramMessage({
   let finalizedViaLiveMessage = false;
   let startingLiveMessage: Promise<void> | null = null;
   let promptCompleted = false;
+
+  // Classification Step
+  try {
+    const classificationPrompt = `[SYSTEM: CLASSIFICATION MODE]
+Analyze the following user request and determine if it should be handled as a "Quick Task" (immediate response, simple question) or an "Async Task" (long-running research, coding task, waiting for something).
+
+- QUICK: Simple questions, clarifications, simple file reads, setting reminders, "hello", "who are you".
+- ASYNC: "Research X", "Monitor Y for Z time", "Scrape this site", "Refactor this codebase", "Check logs for X".
+
+Respond ONLY with the word "QUICK" or "ASYNC".
+
+User Request: "${messageContext.text}"`;
+
+    logInfo('Classifying message', { requestId: messageRequestId });
+    // Use runAcpPrompt without chunk callback for classification
+    const classificationResult = await runAcpPrompt(classificationPrompt);
+    const isAsync = classificationResult.trim().toUpperCase().includes('ASYNC');
+
+    logInfo('Message classification result', { requestId: messageRequestId, isAsync, raw: classificationResult });
+
+    if (isAsync) {
+      await scheduleAsyncJob(messageContext.text, messageContext.chatId);
+      await messageContext.sendText("I've scheduled this as a background task. I'll notify you when it's done.");
+      
+      stopTypingIndicator();
+      return;
+    }
+  } catch (error: any) {
+    logInfo('Classification failed, defaulting to QUICK', {
+      requestId: messageRequestId,
+      error: getErrorMessage(error),
+    });
+  }
 
   const previewText = () => {
     if (previewBuffer.length <= maxResponseLength) {

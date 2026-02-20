@@ -262,6 +262,8 @@ function validateCliAgentOrExit() {
   }
 }
 
+let globalEnqueueMessage: (messageContext: any) => Promise<void>;
+
 const handleScheduledJob = createScheduledJobHandler({
   logInfo,
   buildPromptWithMemory,
@@ -269,6 +271,13 @@ const handleScheduledJob = createScheduledJobHandler({
   resolveTargetChatId: () => resolveChatId(lastIncomingChatId),
   sendTextToChat: (chatId, text) => messagingClient.sendTextToChat(chatId, text),
   normalizeOutgoingText,
+  enqueueMessage: async (ctx) => {
+    if (globalEnqueueMessage) {
+      await globalEnqueueMessage(ctx);
+    } else {
+      logInfo('Warning: globalEnqueueMessage not yet initialized when handling scheduled job');
+    }
+  },
 });
 
 const cronScheduler = new CronScheduler(handleScheduledJob, {
@@ -369,6 +378,9 @@ const { enqueueMessage, getQueueLength } = createMessageQueueProcessor({
       messageGapThresholdMs: MESSAGE_GAP_THRESHOLD_MS,
       acpDebugStream: ACP_DEBUG_STREAM,
       runAcpPrompt,
+      scheduleAsyncJob: async (message, chatId) => {
+        await cronScheduler.executeOneTimeJobImmediately(message, 'Async User Task', { chatId });
+      },
       logInfo,
       getErrorMessage,
       onConversationComplete: CONVERSATION_HISTORY_ENABLED
@@ -390,6 +402,8 @@ const { enqueueMessage, getQueueLength } = createMessageQueueProcessor({
   logInfo,
   getErrorMessage,
 });
+
+globalEnqueueMessage = enqueueMessage;
 
 registerTelegramHandlers({
   messagingClient,
