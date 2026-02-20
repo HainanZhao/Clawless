@@ -264,7 +264,7 @@ function validateCliAgentOrExit() {
 
 const handleScheduledJob = createScheduledJobHandler({
   logInfo,
-  buildPromptWithMemory,
+  buildPromptWithMemory: buildScheduledJobPrompt,
   runScheduledPromptWithTempAcp,
   resolveTargetChatId: () => resolveChatId(lastIncomingChatId),
   sendTextToChat: (chatId, text) => messagingClient.sendTextToChat(chatId, text),
@@ -323,6 +323,22 @@ async function buildPromptWithMemory(userPrompt: string): Promise<string> {
     callbackAuthToken: CALLBACK_AUTH_TOKEN,
     memoryContext,
     messagingPlatform: MESSAGING_PLATFORM,
+  });
+}
+
+async function buildScheduledJobPrompt(userPrompt: string): Promise<string> {
+  const memoryContext = readMemoryContext(MEMORY_FILE_PATH, MEMORY_MAX_CHARS, logInfo);
+
+  return buildPromptWithMemoryTemplate({
+    userPrompt,
+    memoryFilePath: MEMORY_FILE_PATH,
+    callbackHost: CALLBACK_HOST,
+    callbackPort: CALLBACK_PORT,
+    callbackChatStateFilePath: CALLBACK_CHAT_STATE_FILE_PATH,
+    callbackAuthToken: CALLBACK_AUTH_TOKEN,
+    memoryContext,
+    messagingPlatform: MESSAGING_PLATFORM,
+    includeSchedulerApi: false,
   });
 }
 
