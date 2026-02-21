@@ -8,6 +8,59 @@ import dotenv from 'dotenv';
 import { runConfigTui } from './configTui.js';
 import { getConfig, resetConfig } from '../utils/config.js';
 
+// Resolve package metadata relative to this file (works for both src bin/ and dist/bin/)
+const _binDir = path.dirname(new URL(import.meta.url).pathname);
+const _pkgPath = fs.existsSync(path.join(_binDir, '../package.json'))
+  ? path.join(_binDir, '../package.json')
+  : path.join(_binDir, '../../package.json');
+const _pkg = JSON.parse(fs.readFileSync(_pkgPath, 'utf8'));
+const CURRENT_VERSION: string = _pkg.version;
+const PACKAGE_NAME: string = _pkg.name;
+
+function isNewerVersion(current: string, latest: string): boolean {
+  const parse = (v: string) => v.replace(/^v/, '').split('.').map(Number);
+  const [ca, cb, cc] = parse(current);
+  const [la, lb, lc] = parse(latest);
+  if (la !== ca) return la > ca;
+  if (lb !== cb) return lb > cb;
+  return lc > cc;
+}
+
+async function checkForUpdates(): Promise<void> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(`https://registry.npmjs.org/${PACKAGE_NAME}/latest`, { signal: controller.signal });
+    clearTimeout(timeout);
+
+    if (!res.ok) return;
+    const data = (await res.json()) as { version: string };
+
+    if (isNewerVersion(CURRENT_VERSION, data.version)) {
+      printUpdateBanner(CURRENT_VERSION, data.version);
+    }
+  } catch {
+    // Silently ignore network errors — update check is best-effort
+  }
+}
+
+function printUpdateBanner(current: string, latest: string): void {
+  const reset = '\x1b[0m';
+  const yellow = '\x1b[33m';
+  const bold = '\x1b[1m';
+
+  const msg1 = `  Update available: ${current} → ${latest}  `;
+  const msg2 = `  Run: npm install -g ${PACKAGE_NAME}  `;
+  const width = Math.max(msg1.length, msg2.length);
+  const border = '═'.repeat(width);
+  const pad = (s: string) => s + ' '.repeat(width - s.length);
+
+  console.log(`\n${bold}${yellow}╔${border}╗${reset}`);
+  console.log(`${bold}${yellow}║${reset}${pad(msg1)}${bold}${yellow}║${reset}`);
+  console.log(`${bold}${yellow}║${reset}${pad(msg2)}${bold}${yellow}║${reset}`);
+  console.log(`${bold}${yellow}╚${border}╝${reset}\n`);
+}
+
 const ENV_KEY_MAP: Record<string, string> = {
   messagingPlatform: 'MESSAGING_PLATFORM',
   telegramToken: 'TELEGRAM_TOKEN',
@@ -276,6 +329,8 @@ async function main() {
   dotenv.config();
 
   const args = parseArgs(process.argv.slice(2));
+
+  checkForUpdates();
 
   if (args.help) {
     printHelp();
