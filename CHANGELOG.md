@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] - 2026-02-21
+
+### Added
+
+- **Markdown Image Support**: `getSafeMarkdownSplitPoint` now correctly handles markdown image syntax (`![alt](url)`) to prevent splitting inside images.
+- **Comprehensive Test Suite**: Added 15+ new edge case tests for `messageTruncator.ts` covering markdown links, images, inline code, code blocks, escaped characters, and boundary conditions.
+
+### Changed
+
+- **Simplified Background Task Results**: Background task completion messages now show only the job ID reference instead of repeating the original request, making output more concise.
+- **Background Task Prompt**: Added instruction to avoid narrating actions (e.g., "Let me check", "I will analyze") for cleaner output.
+
+---
+
 ## [0.4.5] - 2026-02-21
 
 ### Added
