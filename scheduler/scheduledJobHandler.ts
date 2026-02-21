@@ -17,6 +17,7 @@ function formatBackgroundTaskPrompt(userRequest: string): string {
 Perform the following task immediately. 
 Do not ask any follow-up questions. 
 Provide the final result directly.
+Do not narrate your actions or thought process. Do not say things like "Let me check", "I will analyze", "First, I'll", or "Checking...". Only output the final answer.
 
 User Request: "${userRequest}"`;
 }
