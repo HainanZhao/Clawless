@@ -53,7 +53,7 @@ Instructions:
 2. Determine if it is "Quick" (answer immediately) or "Async" (background task).
 3. Use ASYNC mode if:
     - The task is expected to take longer than 1 minute
-    - Examples: scanning a repo codebase, running tests, building projects, fetching URLs, processing multiple files, complex code analysis
+    - Examples: scanning a repo codebase, running tests, building projects, processing multiple files, complex code analysis
     - IMPORTANT: If you choose ASYNC mode, DO NOT perform the task now. DO NOT call any tools. Just provide the confirmation message and exit.
 4. Use QUICK mode if:
     - The task can be completed in under 1 minute
