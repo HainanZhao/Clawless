@@ -5,6 +5,9 @@ import { getErrorMessage, logError } from '../utils/error.js';
 import { normalizeOutgoingText } from '../utils/commandText.js';
 import { resolveChatId } from '../utils/callbackState.js';
 import { formatConversationHistoryForPrompt } from '../utils/conversationHistory.js';
+import type { CronScheduler } from '../scheduler/cronScheduler.js';
+import type { SemanticConversationMemory } from '../utils/semanticConversationMemory.js';
+import type { MessagingClient } from '../app/MessagingInitializer.js';
 
 type LogInfoFn = (message: string, details?: unknown) => void;
 
@@ -14,10 +17,10 @@ type CreateCallbackServerParams = {
   callbackAuthToken: string;
   callbackMaxBodyBytes: number;
   messagingPlatform: string;
-  cronScheduler: any;
-  messagingClient: any;
+  cronScheduler: CronScheduler;
+  messagingClient: MessagingClient;
   getLastIncomingChatId: () => string | null;
-  semanticConversationMemory: any;
+  semanticConversationMemory: SemanticConversationMemory;
   conversationHistoryMaxTotalChars: number;
   conversationHistoryRecapTopK: number;
   logInfo: LogInfoFn;
@@ -112,9 +115,7 @@ export function createCallbackServer({
         return;
       }
 
-      const input: string[] = body.input
-        .filter((item: any) => typeof item === 'string')
-        .map((s: string) => s.trim());
+      const input: string[] = body.input.filter((item: any) => typeof item === 'string').map((s: string) => s.trim());
 
       const chatId = resolveChatId(body?.chatId ?? requestUrl.searchParams.get('chatId') ?? getLastIncomingChatId());
       const topKRaw = Number(body?.topK ?? requestUrl.searchParams.get('topK') ?? conversationHistoryRecapTopK);

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { getErrorMessage } from './error.js';
+import { getErrorMessage, logWarn } from './error.js';
 import type { ConversationEntry } from './conversationHistory.js';
 
 type LogFn = (message: string, details?: unknown) => void;
@@ -27,15 +27,24 @@ function toEntryId(entry: ConversationEntry): string {
   return `${entry.timestamp}|${entry.chatId}|${entry.platform}`;
 }
 
-function buildSearchTerms(input: string[]): string[] {
-  return Array.from(
+export function buildSearchTerms(input: string[]): string[] {
+  const terms = Array.from(
     new Set(
       input
         .map((token) => (typeof token === 'string' ? token.trim().toLowerCase() : ''))
-        .filter((token) => token.length >= 2)
-        .slice(0, 12),
+        .filter((token) => token.length >= 2),
     ),
   );
+
+  const limit = 24;
+  if (terms.length > limit) {
+    logWarn('Semantic search keywords truncated', {
+      originalCount: terms.length,
+      limit,
+    });
+  }
+
+  return terms.slice(0, limit);
 }
 
 function toConversationEntry(row: SemanticRow): ConversationEntry {
@@ -247,6 +256,12 @@ export class SemanticConversationMemory {
       return [];
     }
 
+    this.logInfo('Semantic conversation recall search', {
+      chatId,
+      input,
+      topK,
+    });
+
     try {
       await this.writeQueue;
       const db = await this.getDatabase();
@@ -304,11 +319,17 @@ export class SemanticConversationMemory {
         );
       }
 
-      if (rows.length === 0) {
-        return [];
-      }
+      const entries = rows
+        .map(toConversationEntry)
+        .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
 
-      return rows.map(toConversationEntry).sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+      this.logInfo('Semantic conversation recall complete', {
+        chatId,
+        count: entries.length,
+        keywords,
+      });
+
+      return entries;
     } catch (error: any) {
       this.logError('Failed semantic conversation recall', {
         chatId,

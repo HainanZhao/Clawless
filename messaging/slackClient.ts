@@ -46,7 +46,7 @@ function splitTextIntoChunks(text: string, maxMessageLength: number): string[] {
   return chunks;
 }
 
-class SlackMessageContext {
+export class SlackMessageContext {
   event: SlackEvent;
   app: App;
   typingIntervalMs: number;

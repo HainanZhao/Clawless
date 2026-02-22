@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { TelegramMessagingClient } from '../messaging/telegramClient.js';
+import type { TelegramMessageContext } from '../messaging/telegramClient.js';
 import { SlackMessagingClient } from '../messaging/slackClient.js';
+import type { SlackMessageContext } from '../messaging/slackClient.js';
 import { processSingleTelegramMessage } from '../messaging/liveMessageProcessor.js';
 import { createMessageQueueProcessor } from '../messaging/messageQueue.js';
 import { registerTelegramHandlers } from '../messaging/registerTelegramHandlers.js';
@@ -14,6 +16,7 @@ import { appendConversationEntry, type ConversationHistoryConfig } from '../util
 import type { SemanticConversationMemory } from '../utils/semanticConversationMemory.js';
 
 export type MessagingClient = TelegramMessagingClient | SlackMessagingClient;
+export type MessageContext = TelegramMessageContext | SlackMessageContext;
 
 export interface MessagingInitializerOptions {
   config: Config;
@@ -27,7 +30,7 @@ export interface MessagingInitializerOptions {
 export class MessagingInitializer {
   private config: Config;
   private messagingClient: MessagingClient;
-  private enqueueMessage: (messageContext: any) => Promise<void>;
+  private enqueueMessage: (messageContext: MessageContext) => Promise<void>;
   private getQueueLength: () => number;
 
   constructor(options: MessagingInitializerOptions) {
@@ -132,7 +135,7 @@ export class MessagingInitializer {
     return this.messagingClient;
   }
 
-  public getEnqueueMessage(): (messageContext: any) => Promise<void> {
+  public getEnqueueMessage(): (messageContext: MessageContext) => Promise<void> {
     return this.enqueueMessage;
   }
 

@@ -2,20 +2,18 @@ import { describe, it, expect, vi } from 'vitest';
 import { logInfo, logError, logWarn, logDebug } from './error.js';
 import logger from './logger.js';
 
-vi.mock('./logger.js', () => ({
-  default: {
+vi.mock('./logger.js', () => {
+  const mock = {
     info: vi.fn(),
     error: vi.fn(),
     warn: vi.fn(),
     debug: vi.fn(),
-  },
-  logger: {
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  }
-}));
+  };
+  return {
+    default: mock,
+    logger: mock,
+  };
+});
 
 describe('logger utils', () => {
   it('logInfo calls logger.info', () => {

@@ -27,7 +27,7 @@ export function toTelegramMarkdown(text: string): string {
   }
 }
 
-class TelegramMessageContext {
+export class TelegramMessageContext {
   ctx: any;
   typingIntervalMs: number;
   maxMessageLength: number;

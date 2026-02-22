@@ -16,6 +16,8 @@ describe('registerTelegramHandlers', () => {
       enqueueMessage: async () => {},
       onAbortRequested: () => {},
       onChatBound: () => {},
+      logError: vi.fn(),
+      logWarn: vi.fn(),
     });
 
     expect(messagingClient.onTextMessage).toHaveBeenCalledWith(expect.any(Function));
