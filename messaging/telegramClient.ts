@@ -10,7 +10,7 @@ const TELEGRAM_PARSE_MODE = 'MarkdownV2' as const;
  * See: https://core.telegram.org/bots/api#markdownv2-style
  */
 export function escapeMarkdownV2(text: string): string {
-  return String(text || '').replace(/[\\_*\[\]()~`>#+\-=|{}.!]/g, '\\$&');
+  return String(text || '').replace(/[\\_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
 }
 
 export function toTelegramMarkdown(text: string): string {

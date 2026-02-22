@@ -27,14 +27,6 @@ function toEntryId(entry: ConversationEntry): string {
   return `${entry.timestamp}|${entry.chatId}|${entry.platform}`;
 }
 
-function truncateForRecall(text: string, maxChars: number): string {
-  if (text.length <= maxChars) {
-    return text;
-  }
-
-  return text.slice(0, maxChars);
-}
-
 function buildSearchTerms(input: string): string[] {
   return Array.from(
     new Set(
@@ -60,7 +52,6 @@ function toConversationEntry(row: SemanticRow): ConversationEntry {
 
 export class SemanticConversationMemory {
   private readonly config: SemanticConversationMemoryConfig;
-  private readonly logInfo: LogFn;
   private readonly logError: LogFn;
   private runtimeDisabled = false;
   private runtimeDisableLogged = false;
