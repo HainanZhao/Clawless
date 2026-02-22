@@ -3,7 +3,7 @@
 ## Quick Setup
 
 1. Run `clawless` once to generate `~/.clawless/config.json`
-2. Edit the file with your platform token and whitelist
+2. Run `clawless --config` to interactively set your platform and credentials
 3. Run `clawless` again
 
 ## Telegram Setup
@@ -15,10 +15,13 @@
 3. Follow prompts to name your bot
 4. Copy the token provided
 
-### Whitelist Configuration
+### Configuration
 
-The bot only accepts messages from whitelisted users. Add your Telegram username:
+Run `clawless --config` and select Telegram when prompted, then enter:
+- Bot Token
+- Your Telegram username (whitelist)
 
+Or manually edit `~/.clawless/config.json`:
 ```json
 {
   "messagingPlatform": "telegram",
@@ -48,6 +51,9 @@ If using email-based allowlist, add these scopes:
 
 ### Configuration
 
+Run `clawless --config` and select Slack when prompted, then enter your credentials.
+
+Or manually edit `~/.clawless/config.json`:
 ```json
 {
   "messagingPlatform": "slack",

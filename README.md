@@ -40,11 +40,14 @@ clawless
 
 First run opens an interactive config. Add your Telegram bot token and username.
 
+For detailed configuration options, see [CONFIG.md](doc/CONFIG.md).
+
 ### Telegram Setup
 
 1. Message [@BotFather](https://t.me/BotFather) → `/newbot` → copy token
-2. Edit `~/.clawless/config.json`:
+2. Run `clawless --config` and enter your token and username when prompted
 
+Or manually edit `~/.clawless/config.json`:
 ```json
 {
   "messagingPlatform": "telegram",
