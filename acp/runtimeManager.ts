@@ -12,7 +12,16 @@ interface CliAgentWithMcp extends BaseCliAgent {
 type LogInfoFn = (message: string, details?: unknown) => void;
 type GetErrorMessageFn = (error: unknown, fallbackMessage?: string) => string;
 
-type CreateAcpRuntimeParams = {
+export enum AcpState {
+  IDLE = 'IDLE',
+  STARTING = 'STARTING',
+  READY = 'READY',
+  PROMPTING = 'PROMPTING',
+  ERROR = 'ERROR',
+  SHUTTING_DOWN = 'SHUTTING_DOWN',
+}
+
+export type CreateAcpRuntimeParams = {
   cliAgent: BaseCliAgent;
   acpPermissionStrategy: string;
   acpStreamStdout: boolean;
@@ -43,57 +52,49 @@ export type AcpRuntime = {
   getRuntimeState: () => {
     acpSessionReady: boolean;
     agentProcessRunning: boolean;
+    state: AcpState;
   };
   appendContext: (text: string) => Promise<void>;
 };
 
-export function createAcpRuntime({
-  cliAgent,
-  acpPermissionStrategy,
-  acpStreamStdout,
-  acpDebugStream,
-  acpTimeoutMs,
-  acpNoOutputTimeoutMs,
-  acpPrewarmRetryMs,
-  acpPrewarmMaxRetries,
-  acpMcpServersJson,
-  stderrTailMaxChars,
-  buildPromptWithMemory,
-  ensureMemoryFile,
-  buildPermissionResponse,
-  noOpAcpFileOperation,
-  getErrorMessage,
-  logInfo,
-  logError,
-}: CreateAcpRuntimeParams): AcpRuntime {
-  const agentCommand = cliAgent.getCommand();
-  const agentDisplayName = cliAgent.getDisplayName();
-  const commandToken = agentCommand.split(/[\\/]/).pop() || agentCommand;
-  const stderrPrefixToken = commandToken.toLowerCase().replace(/\s+/g, '-');
-  const killGraceMs = cliAgent.getKillGraceMs();
+class AcpRuntimeManager implements AcpRuntime {
+  private state: AcpState = AcpState.IDLE;
+  private agentProcess: any = null;
+  private acpConnection: any = null;
+  private acpSessionId: any = null;
+  private sessionReadyPromise: Promise<void> | null = null;
+  private activePromptCollector: any = null;
+  private manualAbortRequested = false;
+  private acpPrewarmRetryTimer: NodeJS.Timeout | null = null;
+  private acpPrewarmRetryAttempts = 0;
+  private agentStderrTail = '';
 
-  let agentProcess: any = null;
-  let acpConnection: any = null;
-  let acpSessionId: any = null;
-  let acpInitPromise: Promise<void> | null = null;
-  let activePromptCollector: any = null;
-  let manualAbortRequested = false;
-  let acpPrewarmRetryTimer: NodeJS.Timeout | null = null;
-  let acpPrewarmRetryAttempts = 0;
-  let agentStderrTail = '';
+  private readonly agentCommand: string;
+  private readonly agentDisplayName: string;
+  private readonly commandToken: string;
+  private readonly stderrPrefixToken: string;
+  private readonly killGraceMs: number;
 
-  const appendAgentStderrTail = (text: string) => {
-    agentStderrTail = `${agentStderrTail}${text}`;
-    if (agentStderrTail.length > stderrTailMaxChars) {
-      agentStderrTail = agentStderrTail.slice(-stderrTailMaxChars);
+  constructor(private params: CreateAcpRuntimeParams) {
+    this.agentCommand = params.cliAgent.getCommand();
+    this.agentDisplayName = params.cliAgent.getDisplayName();
+    this.commandToken = this.agentCommand.split(/[\\/]/).pop() || this.agentCommand;
+    this.stderrPrefixToken = this.commandToken.toLowerCase().replace(/\s+/g, '-');
+    this.killGraceMs = params.cliAgent.getKillGraceMs();
+  }
+
+  private appendAgentStderrTail(text: string) {
+    this.agentStderrTail = `${this.agentStderrTail}${text}`;
+    if (this.agentStderrTail.length > this.params.stderrTailMaxChars) {
+      this.agentStderrTail = this.agentStderrTail.slice(-this.params.stderrTailMaxChars);
     }
-  };
+  }
 
-  const terminateProcessGracefully = (
+  private async terminateProcessGracefully(
     childProcess: ChildProcessWithoutNullStreams,
     processLabel: string,
     details?: Record<string, unknown>,
-  ) => {
+  ) {
     return new Promise<void>((resolve) => {
       if (!childProcess || childProcess.killed || childProcess.exitCode !== null) {
         resolve();
@@ -107,7 +108,7 @@ export function createAcpRuntime({
           return;
         }
         settled = true;
-        logInfo(`${agentDisplayName} process termination finalized`, {
+        this.params.logInfo(`${this.agentDisplayName} process termination finalized`, {
           processLabel,
           reason,
           pid: childProcess.pid,
@@ -118,10 +119,10 @@ export function createAcpRuntime({
 
       childProcess.once('exit', () => finalize('exit'));
 
-      logInfo(`Sending SIGTERM to ${agentDisplayName} process`, {
+      this.params.logInfo(`Sending SIGTERM to ${this.agentDisplayName} process`, {
         processLabel,
         pid: childProcess.pid,
-        graceMs: killGraceMs,
+        graceMs: this.killGraceMs,
         ...details,
       });
       childProcess.kill('SIGTERM');
@@ -133,7 +134,7 @@ export function createAcpRuntime({
             return;
           }
 
-          logInfo(`Escalating ${agentDisplayName} process termination to SIGKILL`, {
+          this.params.logInfo(`Escalating ${this.agentDisplayName} process termination to SIGKILL`, {
             processLabel,
             pid: childProcess.pid,
             ...details,
@@ -142,281 +143,324 @@ export function createAcpRuntime({
           childProcess.kill('SIGKILL');
           finalize('sigkill');
         },
-        Math.max(0, killGraceMs),
+        Math.max(0, this.killGraceMs),
       );
     });
-  };
+  }
 
-  const hasHealthyAcpRuntime = () => {
-    return Boolean(acpConnection && acpSessionId && agentProcess && !agentProcess.killed);
-  };
+  private setState(newState: AcpState) {
+    if (this.state === newState) {
+      return;
+    }
+    this.params.logInfo('AcpRuntime state transition', {
+      from: this.state,
+      to: newState,
+      sessionId: this.acpSessionId,
+    });
+    this.state = newState;
+  }
 
-  const hasActiveAcpPrompt = () => {
-    return Boolean(activePromptCollector && acpConnection && acpSessionId);
-  };
+  private hasHealthyAcpRuntime(): boolean {
+    return (
+      (this.state === AcpState.READY || this.state === AcpState.PROMPTING) &&
+      Boolean(this.acpConnection && this.acpSessionId && this.agentProcess && !this.agentProcess.killed)
+    );
+  }
 
-  const cancelActiveAcpPrompt = async () => {
+  public hasActiveAcpPrompt(): boolean {
+    return this.state === AcpState.PROMPTING && Boolean(this.activePromptCollector);
+  }
+
+  public async cancelActiveAcpPrompt() {
     try {
-      if (acpConnection && acpSessionId) {
-        await acpConnection.cancel({ sessionId: acpSessionId });
+      if (this.acpConnection && this.acpSessionId) {
+        await this.acpConnection.cancel({ sessionId: this.acpSessionId });
       }
     } catch (_) {}
-  };
+  }
 
-  const shutdownAcpRuntime = async (reason: string) => {
-    const processToStop = agentProcess;
-    const runtimeSessionId = acpSessionId;
+  public async shutdownAcpRuntime(reason: string) {
+    this.setState(AcpState.SHUTTING_DOWN);
+    const processToStop = this.agentProcess;
+    const runtimeSessionId = this.acpSessionId;
 
-    activePromptCollector = null;
-    acpConnection = null;
-    acpSessionId = null;
-    acpInitPromise = null;
-    agentProcess = null;
-    agentStderrTail = '';
+    this.activePromptCollector = null;
+    this.acpConnection = null;
+    this.acpSessionId = null;
+    this.sessionReadyPromise = null;
+    this.agentProcess = null;
+    this.agentStderrTail = '';
 
     if (processToStop && !processToStop.killed && processToStop.exitCode === null) {
-      await terminateProcessGracefully(processToStop, 'main-acp-runtime', {
+      await this.terminateProcessGracefully(processToStop, 'main-acp-runtime', {
         reason,
         sessionId: runtimeSessionId,
       });
     }
-  };
+    this.setState(AcpState.IDLE);
+  }
 
-  const buildAgentAcpArgs = () => {
-    return cliAgent.buildAcpArgs();
-  };
+  public buildAgentAcpArgs(): string[] {
+    return this.params.cliAgent.buildAcpArgs();
+  }
 
-  const acpClient = {
-    async requestPermission(params: any) {
-      return buildPermissionResponse(params?.options, acpPermissionStrategy);
-    },
+  private get acpClient() {
+    const self = this;
+    return {
+      async requestPermission(params: any) {
+        return self.params.buildPermissionResponse(params?.options, self.params.acpPermissionStrategy);
+      },
 
-    async sessionUpdate(params: any) {
-      if (!activePromptCollector || params.sessionId !== acpSessionId) {
-        return;
-      }
-
-      activePromptCollector.onActivity();
-
-      const updateType = params.update?.sessionUpdate;
-      const contentType = params.update?.content?.type;
-
-      // Handle thinking/thought chunks (internal reasoning, not displayed to user)
-      if (updateType === 'agent_thought_chunk') {
-        if (acpDebugStream) {
-          const thoughtText = params.update?.content?.text || '';
-          logInfo('ACP thought chunk', {
-            sessionId: acpSessionId,
-            thoughtLength: thoughtText.length,
-            thoughtPreview: thoughtText.slice(0, 100),
-          });
+      async sessionUpdate(params: any) {
+        if (!self.activePromptCollector || params.sessionId !== self.acpSessionId) {
+          return;
         }
-        return;
-      }
 
-      // ONLY handle regular message chunks of type text
-      if (updateType === 'agent_message_chunk' && contentType === 'text') {
-        const chunkText = params.update.content.text;
-        if (chunkText) {
-          activePromptCollector.append(chunkText);
-          if (acpStreamStdout) {
-            process.stdout.write(chunkText);
+        self.activePromptCollector.onActivity();
+
+        const updateType = params.update?.sessionUpdate;
+        const contentType = params.update?.content?.type;
+
+        if (updateType === 'agent_thought_chunk') {
+          if (self.params.acpDebugStream) {
+            const thoughtText = params.update?.content?.text || '';
+            self.params.logInfo('ACP thought chunk', {
+              sessionId: self.acpSessionId,
+              thoughtLength: thoughtText.length,
+              thoughtPreview: thoughtText.slice(0, 100),
+            });
+          }
+          return;
+        }
+
+        if (updateType === 'agent_message_chunk' && contentType === 'text') {
+          const chunkText = params.update.content.text;
+          if (chunkText) {
+            self.activePromptCollector.append(chunkText);
+            if (self.params.acpStreamStdout) {
+              process.stdout.write(chunkText);
+            }
           }
         }
-      }
-    },
+      },
 
-    async readTextFile(params: any) {
-      return noOpAcpFileOperation(params);
-    },
+      async readTextFile(params: any) {
+        return self.params.noOpAcpFileOperation(params);
+      },
 
-    async writeTextFile(params: any) {
-      return noOpAcpFileOperation(params);
-    },
-  };
+      async writeTextFile(params: any) {
+        return self.params.noOpAcpFileOperation(params);
+      },
+    };
+  }
 
-  const resetAcpRuntime = () => {
-    logInfo('Resetting ACP runtime state');
-    void shutdownAcpRuntime('runtime-reset');
-    scheduleAcpPrewarm('runtime reset');
-  };
+  private resetAcpRuntime() {
+    this.params.logInfo('Resetting ACP runtime state');
+    void this.shutdownAcpRuntime('runtime-reset');
+    this.scheduleAcpPrewarm('runtime reset');
+  }
 
-  const ensureAcpSession = async () => {
-    ensureMemoryFile();
+  private async initializeSession(): Promise<void> {
+    const args = this.buildAgentAcpArgs();
 
-    if (acpConnection && acpSessionId && agentProcess && !agentProcess.killed) {
-      return;
+    let mcpServers: unknown[] = [];
+    let mcpServersSource = 'agent-config';
+
+    const agentWithMcp = this.params.cliAgent as CliAgentWithMcp;
+    if (typeof agentWithMcp.getMcpServersForAcp === 'function') {
+      mcpServers = agentWithMcp.getMcpServersForAcp();
+      this.params.logInfo(`Using MCP servers from agent configuration`, {
+        count: mcpServers.length,
+      });
     }
 
-    if (acpInitPromise) {
-      await acpInitPromise;
-      return;
+    if (mcpServers.length === 0) {
+      const envResult = getMcpServersForSession({
+        acpMcpServersJson: this.params.acpMcpServersJson,
+        logInfo: this.params.logInfo,
+        getErrorMessage: this.params.getErrorMessage,
+        invalidEnvMessage: 'Invalid ACP_MCP_SERVERS_JSON; using empty mcpServers array',
+      });
+      mcpServers = envResult.mcpServers;
+      mcpServersSource = envResult.source;
     }
 
-    acpInitPromise = (async () => {
-      const args = buildAgentAcpArgs();
-
-      // First, try to get MCP servers from the agent (e.g., from Gemini settings)
-      let mcpServers: unknown[] = [];
-      let mcpServersSource = 'agent-config';
-
-      const agentWithMcp = cliAgent as CliAgentWithMcp;
-      if (typeof agentWithMcp.getMcpServersForAcp === 'function') {
-        mcpServers = agentWithMcp.getMcpServersForAcp();
-        logInfo(`Using MCP servers from agent configuration`, {
-          count: mcpServers.length,
-        });
-      }
-
-      // Fall back to environment variable if agent didn't provide MCP servers
-      if (mcpServers.length === 0) {
-        const envResult = getMcpServersForSession({
-          acpMcpServersJson,
-          logInfo,
-          getErrorMessage,
-          invalidEnvMessage: 'Invalid ACP_MCP_SERVERS_JSON; using empty mcpServers array',
-        });
-        mcpServers = envResult.mcpServers;
-        mcpServersSource = envResult.source;
-      }
-
-      const mcpServerNames = mcpServers
-        .map((server) => {
-          if (server && typeof server === 'object' && 'name' in server) {
-            return String((server as { name?: unknown }).name ?? '');
-          }
-
-          return '';
-        })
-        .filter((name) => name.length > 0);
-
-      logInfo(`Starting ${agentDisplayName} ACP process`, {
-        command: agentCommand,
-        args,
-      });
-      agentStderrTail = '';
-      agentProcess = spawn(agentCommand, args, {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        cwd: process.cwd(),
-      });
-
-      agentProcess.stderr.on('data', (chunk: Buffer) => {
-        const rawText = chunk.toString();
-        appendAgentStderrTail(rawText);
-        const text = rawText.trim();
-        if (text) {
-          logError(`[${stderrPrefixToken}] ${text}`);
+    const mcpServerNames = mcpServers
+      .map((server) => {
+        if (server && typeof server === 'object' && 'name' in server) {
+          return String((server as { name?: unknown }).name ?? '');
         }
-        if (activePromptCollector) {
-          activePromptCollector.onActivity();
-        }
-      });
 
-      agentProcess.on('error', (error: Error) => {
-        logError(`${agentDisplayName} ACP process error:`, error.message);
-        resetAcpRuntime();
-      });
+        return '';
+      })
+      .filter((name) => name.length > 0);
 
-      agentProcess.on('close', (code: number, signal: string) => {
-        logError(`${agentDisplayName} ACP process closed (code=${code}, signal=${signal})`);
-        resetAcpRuntime();
-      });
+    this.params.logInfo(`Starting ${this.agentDisplayName} ACP process`, {
+      command: this.agentCommand,
+      args,
+    });
+    this.agentStderrTail = '';
+    this.agentProcess = spawn(this.agentCommand, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: process.cwd(),
+    });
 
-      const input = Writable.toWeb(agentProcess.stdin) as unknown as WritableStream<Uint8Array>;
-      const output = Readable.toWeb(agentProcess.stdout) as unknown as ReadableStream<Uint8Array>;
-      const stream = acp.ndJsonStream(input, output);
-
-      acpConnection = new acp.ClientSideConnection(() => acpClient, stream);
-
-      try {
-        await acpConnection.initialize({
-          protocolVersion: acp.PROTOCOL_VERSION,
-          clientCapabilities: {},
-        });
-        logInfo('ACP connection initialized');
-
-        const session = await acpConnection.newSession({
-          cwd: process.cwd(),
-          mcpServers,
-        });
-
-        acpSessionId = session.sessionId;
-        logInfo('ACP session ready', {
-          sessionId: acpSessionId,
-          mcpServersMode: mcpServersSource,
-          mcpServersCount: mcpServers.length,
-          mcpServerNames,
-        });
-      } catch (error: any) {
-        const baseMessage = getErrorMessage(error);
-        const isInternalError = baseMessage.includes('Internal error');
-        const hint = isInternalError
-          ? `${agentDisplayName} ACP newSession returned Internal error. This is often caused by a local MCP server or skill initialization issue. Try launching the CLI directly and checking MCP/skills diagnostics.`
-          : '';
-
-        logInfo('ACP initialization failed', {
-          error: baseMessage,
-          stderrTail: agentStderrTail || '(empty)',
-        });
-
-        resetAcpRuntime();
-        throw new Error(hint ? `${baseMessage}. ${hint}` : baseMessage);
+    this.agentProcess.stderr.on('data', (chunk: Buffer) => {
+      const rawText = chunk.toString();
+      this.appendAgentStderrTail(rawText);
+      const text = rawText.trim();
+      if (text) {
+        this.params.logError(`[${this.stderrPrefixToken}] ${text}`);
       }
-    })();
+      if (this.activePromptCollector) {
+        this.activePromptCollector.onActivity();
+      }
+    });
+
+    this.agentProcess.on('error', (error: Error) => {
+      this.params.logError(`${this.agentDisplayName} ACP process error:`, error.message);
+      this.setState(AcpState.ERROR);
+      this.resetAcpRuntime();
+    });
+
+    this.agentProcess.on('close', (code: number, signal: string) => {
+      this.params.logError(`${this.agentDisplayName} ACP process closed (code=${code}, signal=${signal})`);
+      this.setState(AcpState.IDLE);
+      this.resetAcpRuntime();
+    });
+
+    const input = Writable.toWeb(this.agentProcess.stdin) as unknown as WritableStream<Uint8Array>;
+    const output = Readable.toWeb(this.agentProcess.stdout) as unknown as ReadableStream<Uint8Array>;
+    const stream = acp.ndJsonStream(input, output);
+
+    this.acpConnection = new acp.ClientSideConnection(() => this.acpClient, stream);
 
     try {
-      await acpInitPromise;
+      await this.acpConnection.initialize({
+        protocolVersion: acp.PROTOCOL_VERSION,
+        clientCapabilities: {},
+      });
+      this.params.logInfo('ACP connection initialized');
+
+      const session = await this.acpConnection.newSession({
+        cwd: process.cwd(),
+        mcpServers,
+      });
+
+      this.acpSessionId = session.sessionId;
+      this.setState(AcpState.READY);
+      this.params.logInfo('ACP session ready', {
+        sessionId: this.acpSessionId,
+        mcpServersMode: mcpServersSource,
+        mcpServersCount: mcpServers.length,
+        mcpServerNames,
+      });
+    } catch (error: any) {
+      this.setState(AcpState.ERROR);
+      const baseMessage = this.params.getErrorMessage(error);
+      const isInternalError = baseMessage.includes('Internal error');
+      const hint = isInternalError
+        ? `${this.agentDisplayName} ACP newSession returned Internal error. This is often caused by a local MCP server or skill initialization issue. Try launching the CLI directly and checking MCP/skills diagnostics.`
+        : '';
+
+      this.params.logInfo('ACP initialization failed', {
+        error: baseMessage,
+        stderrTail: this.agentStderrTail || '(empty)',
+      });
+
+      this.resetAcpRuntime();
+      throw new Error(hint ? `${baseMessage}. ${hint}` : baseMessage);
+    }
+  }
+
+  private async ensureAcpSession() {
+    this.params.ensureMemoryFile();
+
+    if (this.hasHealthyAcpRuntime()) {
+      return;
+    }
+
+    if (this.sessionReadyPromise) {
+      await this.sessionReadyPromise;
+      return;
+    }
+
+    if (this.state !== AcpState.IDLE && this.state !== AcpState.ERROR) {
+      this.params.logError(`Cannot ensure session in state ${this.state}`);
+      return;
+    }
+
+    this.setState(AcpState.STARTING);
+    this.sessionReadyPromise = this.initializeSession();
+
+    try {
+      await this.sessionReadyPromise;
     } finally {
-      acpInitPromise = null;
+      this.sessionReadyPromise = null;
     }
-  };
+  }
 
-  const scheduleAcpPrewarm = (reason: string) => {
-    if (hasHealthyAcpRuntime() || acpInitPromise) {
+  public scheduleAcpPrewarm(reason: string) {
+    if (this.hasHealthyAcpRuntime() || this.sessionReadyPromise) {
       return;
     }
 
-    if (acpPrewarmRetryTimer) {
+    if (this.acpPrewarmRetryTimer) {
       return;
     }
 
-    logInfo('Triggering ACP prewarm', { reason });
+    this.params.logInfo('Triggering ACP prewarm', { reason });
 
-    ensureAcpSession()
+    this.ensureAcpSession()
       .then(() => {
-        acpPrewarmRetryAttempts = 0;
-        logInfo(`${agentDisplayName} ACP prewarm complete`);
+        this.acpPrewarmRetryAttempts = 0;
+        this.params.logInfo(`${this.agentDisplayName} ACP prewarm complete`);
       })
       .catch((error: unknown) => {
-        logInfo(`${agentDisplayName} ACP prewarm failed`, { error: getErrorMessage(error) });
+        this.params.logInfo(`${this.agentDisplayName} ACP prewarm failed`, {
+          error: this.params.getErrorMessage(error),
+        });
 
-        acpPrewarmRetryAttempts += 1;
-        if (acpPrewarmMaxRetries > 0 && acpPrewarmRetryAttempts >= acpPrewarmMaxRetries) {
-          logInfo(`${agentDisplayName} ACP prewarm retries exhausted; stopping automatic retries`, {
-            attempts: acpPrewarmRetryAttempts,
-            maxRetries: acpPrewarmMaxRetries,
+        this.acpPrewarmRetryAttempts += 1;
+        if (this.params.acpPrewarmMaxRetries > 0 && this.acpPrewarmRetryAttempts >= this.params.acpPrewarmMaxRetries) {
+          this.params.logInfo(`${this.agentDisplayName} ACP prewarm retries exhausted; stopping automatic retries`, {
+            attempts: this.acpPrewarmRetryAttempts,
+            maxRetries: this.params.acpPrewarmMaxRetries,
           });
           return;
         }
 
-        if (acpPrewarmRetryMs > 0) {
-          acpPrewarmRetryTimer = setTimeout(() => {
-            acpPrewarmRetryTimer = null;
-            scheduleAcpPrewarm('retry');
-          }, acpPrewarmRetryMs);
+        if (this.params.acpPrewarmRetryMs > 0) {
+          this.acpPrewarmRetryTimer = setTimeout(() => {
+            this.acpPrewarmRetryTimer = null;
+            this.scheduleAcpPrewarm('retry');
+          }, this.params.acpPrewarmRetryMs);
         }
       });
-  };
+  }
 
-  const runAcpPrompt = async (promptText: string, onChunk?: (chunk: string) => void) => {
-    await ensureAcpSession();
+  public async runAcpPrompt(promptText: string, onChunk?: (chunk: string) => void): Promise<string> {
+    if (this.state === AcpState.PROMPTING) {
+      throw new Error('Cannot start a new prompt while another is already in progress.');
+    }
+
+    if (this.state === AcpState.SHUTTING_DOWN) {
+      throw new Error('Cannot start a new prompt while shutting down.');
+    }
+
+    if (!this.hasHealthyAcpRuntime()) {
+      await this.ensureAcpSession();
+    }
+
+    this.setState(AcpState.PROMPTING);
+
     const promptInvocationId = `acp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    logInfo('Starting ACP prompt', {
+    this.params.logInfo('Starting ACP prompt', {
       invocationId: promptInvocationId,
-      sessionId: acpSessionId,
+      sessionId: this.acpSessionId,
       promptLength: promptText.length,
     });
-    const promptForGemini = await buildPromptWithMemory(promptText);
+    const promptForGemini = await this.params.buildPromptWithMemory(promptText);
 
     return new Promise<string>((resolve, reject) => {
       let fullResponse = '';
@@ -438,16 +482,17 @@ export function createAcpRuntime({
           return;
         }
         isSettled = true;
-        manualAbortRequested = false;
+        this.manualAbortRequested = false;
         clearTimers();
-        activePromptCollector = null;
-        logInfo('ACP prompt failed', {
+        this.activePromptCollector = null;
+        this.setState(AcpState.READY);
+        this.params.logInfo('ACP prompt failed', {
           invocationId: promptInvocationId,
-          sessionId: acpSessionId,
+          sessionId: this.acpSessionId,
           chunkCount,
           firstChunkDelayMs: firstChunkAt ? firstChunkAt - startedAt : null,
           elapsedMs: Date.now() - startedAt,
-          error: getErrorMessage(error),
+          error: this.params.getErrorMessage(error),
         });
         reject(error);
       };
@@ -457,12 +502,13 @@ export function createAcpRuntime({
           return;
         }
         isSettled = true;
-        manualAbortRequested = false;
+        this.manualAbortRequested = false;
         clearTimers();
-        activePromptCollector = null;
-        logInfo('ACP prompt completed', {
+        this.activePromptCollector = null;
+        this.setState(AcpState.READY);
+        this.params.logInfo('ACP prompt completed', {
           invocationId: promptInvocationId,
-          sessionId: acpSessionId,
+          sessionId: this.acpSessionId,
           chunkCount,
           firstChunkDelayMs: firstChunkAt ? firstChunkAt - startedAt : null,
           elapsedMs: Date.now() - startedAt,
@@ -472,7 +518,7 @@ export function createAcpRuntime({
       };
 
       const refreshNoOutputTimer = () => {
-        if (!acpNoOutputTimeoutMs || acpNoOutputTimeoutMs <= 0) {
+        if (!this.params.acpNoOutputTimeoutMs || this.params.acpNoOutputTimeoutMs <= 0) {
           return;
         }
 
@@ -481,17 +527,17 @@ export function createAcpRuntime({
         }
 
         noOutputTimeout = setTimeout(async () => {
-          await cancelActiveAcpPrompt();
-          failOnce(new Error(`${agentDisplayName} ACP produced no output for ${acpNoOutputTimeoutMs}ms`));
-        }, acpNoOutputTimeoutMs);
+          await this.cancelActiveAcpPrompt();
+          failOnce(new Error(`${this.agentDisplayName} ACP produced no output for ${this.params.acpNoOutputTimeoutMs}ms`));
+        }, this.params.acpNoOutputTimeoutMs);
       };
 
       const overallTimeout = setTimeout(async () => {
-        await cancelActiveAcpPrompt();
-        failOnce(new Error(`${agentDisplayName} ACP timed out after ${acpTimeoutMs}ms`));
-      }, acpTimeoutMs);
+        await this.cancelActiveAcpPrompt();
+        failOnce(new Error(`${this.agentDisplayName} ACP timed out after ${this.params.acpTimeoutMs}ms`));
+      }, this.params.acpTimeoutMs);
 
-      activePromptCollector = {
+      this.activePromptCollector = {
         onActivity: refreshNoOutputTimer,
         append: (textChunk: string) => {
           refreshNoOutputTimer();
@@ -499,8 +545,8 @@ export function createAcpRuntime({
           if (!firstChunkAt) {
             firstChunkAt = Date.now();
           }
-          if (acpDebugStream) {
-            logInfo('ACP chunk received', {
+          if (this.params.acpDebugStream) {
+            this.params.logInfo('ACP chunk received', {
               invocationId: promptInvocationId,
               chunkIndex: chunkCount,
               chunkLength: textChunk.length,
@@ -519,9 +565,9 @@ export function createAcpRuntime({
 
       refreshNoOutputTimer();
 
-      acpConnection
+      this.acpConnection
         .prompt({
-          sessionId: acpSessionId,
+          sessionId: this.acpSessionId,
           prompt: [
             {
               type: 'text',
@@ -530,8 +576,8 @@ export function createAcpRuntime({
           ],
         })
         .then((result: any) => {
-          if (acpDebugStream) {
-            logInfo('ACP prompt stop reason', {
+          if (this.params.acpDebugStream) {
+            this.params.logInfo('ACP prompt stop reason', {
               invocationId: promptInvocationId,
               stopReason: result?.stopReason || '(none)',
               chunkCount,
@@ -542,9 +588,9 @@ export function createAcpRuntime({
           if (result?.stopReason === 'cancelled' && !fullResponse) {
             failOnce(
               new Error(
-                manualAbortRequested
-                  ? `${agentDisplayName} ACP prompt was aborted by user`
-                  : `${agentDisplayName} ACP prompt was cancelled`,
+                this.manualAbortRequested
+                  ? `${this.agentDisplayName} ACP prompt was aborted by user`
+                  : `${this.agentDisplayName} ACP prompt was cancelled`,
               ),
             );
             return;
@@ -552,18 +598,18 @@ export function createAcpRuntime({
           resolveOnce(fullResponse || 'No response received.');
         })
         .catch((error: any) => {
-          failOnce(new Error(error?.message || `${agentDisplayName} ACP prompt failed`));
+          failOnce(new Error(error?.message || `${this.agentDisplayName} ACP prompt failed`));
         });
     });
-  };
+  }
 
-  const appendContext = async (text: string) => {
-    if (!hasHealthyAcpRuntime() || hasActiveAcpPrompt()) {
+  public async appendContext(text: string) {
+    if (!this.hasHealthyAcpRuntime() || this.hasActiveAcpPrompt()) {
       return;
     }
 
-    logInfo('Appending context to ACP session', {
-      sessionId: acpSessionId,
+    this.params.logInfo('Appending context to ACP session', {
+      sessionId: this.acpSessionId,
       textLength: text.length,
     });
 
@@ -578,39 +624,36 @@ Result:
 ${text}`;
 
     try {
-      // We call prompt but we don't wait for a long response
-      // ACP prompt will usually return quickly if the agent is instructed not to respond
-      void acpConnection
+      void this.acpConnection
         .prompt({
-          sessionId: acpSessionId,
+          sessionId: this.acpSessionId,
           prompt: [{ type: 'text', text: updatePrompt }],
         })
         .catch((error: any) => {
-          logInfo('Context update fire-and-forget failed', {
-            error: getErrorMessage(error),
+          this.params.logInfo('Context update fire-and-forget failed', {
+            error: this.params.getErrorMessage(error),
           });
         });
     } catch (error: any) {
-      logInfo('Failed to append context to ACP session', {
-        error: getErrorMessage(error),
+      this.params.logInfo('Failed to append context to ACP session', {
+        error: this.params.getErrorMessage(error),
       });
     }
-  };
+  }
 
-  return {
-    buildAgentAcpArgs,
-    runAcpPrompt,
-    appendContext,
-    scheduleAcpPrewarm,
-    shutdownAcpRuntime,
-    cancelActiveAcpPrompt,
-    hasActiveAcpPrompt,
-    requestManualAbort: () => {
-      manualAbortRequested = true;
-    },
-    getRuntimeState: () => ({
-      acpSessionReady: Boolean(acpSessionId),
-      agentProcessRunning: Boolean(agentProcess && !agentProcess.killed),
-    }),
-  };
+  public requestManualAbort() {
+    this.manualAbortRequested = true;
+  }
+
+  public getRuntimeState() {
+    return {
+      acpSessionReady: Boolean(this.acpSessionId),
+      agentProcessRunning: Boolean(this.agentProcess && !this.agentProcess.killed),
+      state: this.state,
+    };
+  }
+}
+
+export function createAcpRuntime(params: CreateAcpRuntimeParams): AcpRuntime {
+  return new AcpRuntimeManager(params);
 }
