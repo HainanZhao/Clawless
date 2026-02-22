@@ -1,6 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { SemanticConversationMemory } from './semanticConversationMemory.js';
 
+vi.mock('sql.js', () => ({
+  default: async () => {
+    throw new Error('mock sql.js init failure');
+  },
+}));
+
 describe('SemanticConversationMemory', () => {
   it('should log an error when failing to initialize the database', async () => {
     const logInfo = vi.fn();
