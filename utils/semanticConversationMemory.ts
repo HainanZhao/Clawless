@@ -21,7 +21,6 @@ type SemanticRow = {
   platform: string;
 };
 
-const FTS_TABLE_NAME = 'semantic_memory_fts';
 const ENTRIES_TABLE_NAME = 'semantic_memory_entries';
 
 function toEntryId(entry: ConversationEntry): string {
@@ -34,27 +33,6 @@ function truncateForRecall(text: string, maxChars: number): string {
   }
 
   return text.slice(0, maxChars);
-}
-
-function buildRecallText(entry: Pick<ConversationEntry, 'userMessage' | 'botResponse'>, maxChars: number): string {
-  return truncateForRecall(`User: ${entry.userMessage}\nAssistant: ${entry.botResponse}`, maxChars);
-}
-
-function buildFtsQuery(input: string): string {
-  const tokens = input
-    .toLowerCase()
-    .split(/[^\p{L}\p{N}_]+/u)
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 2)
-    .slice(0, 12);
-
-  if (tokens.length === 0) {
-    return '';
-  }
-
-  return Array.from(new Set(tokens))
-    .map((token) => `${token}*`)
-    .join(' OR ');
 }
 
 function buildSearchTerms(input: string): string[] {
@@ -89,7 +67,6 @@ export class SemanticConversationMemory {
   private sqlModulePromise: Promise<any> | null = null;
   private dbPromise: Promise<any> | null = null;
   private writeQueue: Promise<void> = Promise.resolve();
-  private ftsAvailable = true;
 
   constructor(config: SemanticConversationMemoryConfig, logInfo: LogFn, logError: LogFn) {
     this.config = config;
@@ -112,8 +89,7 @@ export class SemanticConversationMemory {
     this.logError('Semantic memory disabled at runtime', {
       reason,
       error: error ? getErrorMessage(error) : undefined,
-      action:
-        action || 'Verify sql.js/SQLite FTS5 support and restart, or set CONVERSATION_SEMANTIC_RECALL_ENABLED=false.',
+      action: action || 'Verify sql.js support and restart, or set CONVERSATION_SEMANTIC_RECALL_ENABLED=false.',
     });
   }
 
@@ -173,24 +149,6 @@ export class SemanticConversationMemory {
             ON ${ENTRIES_TABLE_NAME}(chat_id, seq);
         `);
 
-        try {
-          db.run(`
-            CREATE VIRTUAL TABLE IF NOT EXISTS ${FTS_TABLE_NAME}
-            USING fts5(
-              seq UNINDEXED,
-              chat_id UNINDEXED,
-              content,
-              tokenize = 'unicode61 remove_diacritics 2'
-            );
-          `);
-          this.ftsAvailable = true;
-        } catch (error: any) {
-          this.ftsAvailable = false;
-          this.logInfo('SQLite FTS5 unavailable; using LIKE fallback for semantic recall', {
-            error: getErrorMessage(error),
-          });
-        }
-
         this.persistDatabase(db);
         return db;
       } catch (error: any) {
@@ -249,9 +207,7 @@ export class SemanticConversationMemory {
     try {
       await this.enqueueWrite(async () => {
         const db = await this.getDatabase();
-
         const entryId = toEntryId(entry);
-        const recallText = buildRecallText(entry, this.config.maxCharsPerEntry);
 
         db.run('BEGIN');
         try {
@@ -264,27 +220,6 @@ export class SemanticConversationMemory {
             [entryId, entry.timestamp, entry.chatId, entry.userMessage, entry.botResponse, entry.platform],
           );
 
-          const seqRows = await this.queryRows(db, `SELECT seq FROM ${ENTRIES_TABLE_NAME} WHERE entry_id = ?`, [
-            entryId,
-          ]);
-          const rawSeq = Number((seqRows[0] as any)?.seq);
-          const rowId = Number.isInteger(rawSeq) && rawSeq > 0 ? rawSeq : null;
-
-          if (rowId !== null && this.ftsAvailable) {
-            db.run(`DELETE FROM ${FTS_TABLE_NAME} WHERE seq = ?`, [rowId]);
-            db.run(`INSERT INTO ${FTS_TABLE_NAME}(seq, chat_id, content) VALUES (?, ?, ?)`, [
-              rowId,
-              entry.chatId,
-              recallText,
-            ]);
-          } else if (rowId === null) {
-            this.logError('Skipped semantic recall index insert due to invalid rowid', {
-              entryId,
-              rawSeq,
-              chatId: entry.chatId,
-            });
-          }
-
           if (this.config.maxEntries > 0) {
             db.run(
               `
@@ -295,9 +230,6 @@ export class SemanticConversationMemory {
               `,
               [this.config.maxEntries],
             );
-            if (this.ftsAvailable) {
-              db.run(`DELETE FROM ${FTS_TABLE_NAME} WHERE seq NOT IN (SELECT seq FROM ${ENTRIES_TABLE_NAME})`);
-            }
           }
 
           db.run('COMMIT');
@@ -320,7 +252,7 @@ export class SemanticConversationMemory {
     }
   }
 
-  async getRelevantEntries(chatId: string, userPrompt: string, topK: number): Promise<ConversationEntry[]> {
+  async getRelevantEntries(chatId: string, input: string, topK: number): Promise<ConversationEntry[]> {
     if (!this.isEnabled || topK <= 0) {
       return [];
     }
@@ -328,43 +260,38 @@ export class SemanticConversationMemory {
     try {
       await this.writeQueue;
       const db = await this.getDatabase();
-      const query = buildFtsQuery(userPrompt);
-      const terms = buildSearchTerms(userPrompt);
+      const keywords = buildSearchTerms(input);
 
       let rows: SemanticRow[] = [];
-      if (query && this.ftsAvailable) {
-        rows = await this.queryRows(
-          db,
-          `
-            SELECT e.timestamp, e.chat_id, e.user_message, e.bot_response, e.platform
-            FROM ${FTS_TABLE_NAME} f
-            JOIN ${ENTRIES_TABLE_NAME} e ON e.seq = f.seq
-            WHERE f.chat_id = ?
-              AND f.content MATCH ?
-            ORDER BY bm25(${FTS_TABLE_NAME}) ASC, e.seq DESC
-            LIMIT ?
-          `,
-          [chatId, query, topK],
-        );
-      }
 
-      if (rows.length === 0 && terms.length > 0) {
-        const conditions = terms.map(() => '(LOWER(user_message) LIKE ? OR LOWER(bot_response) LIKE ?)').join(' OR ');
-        const params: unknown[] = [chatId];
-        for (const term of terms) {
-          const like = `%${term}%`;
-          params.push(like, like);
+      if (keywords.length > 0) {
+        const scoreSql = keywords
+          .map(() => '(CASE WHEN user_message LIKE ? THEN 1 ELSE 0 END + CASE WHEN bot_response LIKE ? THEN 1 ELSE 0 END)')
+          .join(' + ');
+
+        const conditions = keywords.map(() => '(user_message LIKE ? OR bot_response LIKE ?)').join(' OR ');
+
+        const params: unknown[] = [];
+        for (const kw of keywords) {
+          const pattern = `%${kw}%`;
+          params.push(pattern, pattern);
+        }
+        params.push(chatId);
+        for (const kw of keywords) {
+          const pattern = `%${kw}%`;
+          params.push(pattern, pattern);
         }
         params.push(topK);
 
         rows = await this.queryRows(
           db,
           `
-            SELECT timestamp, chat_id, user_message, bot_response, platform
+            SELECT timestamp, chat_id, user_message, bot_response, platform,
+                   (${scoreSql}) as score
             FROM ${ENTRIES_TABLE_NAME}
             WHERE chat_id = ?
               AND (${conditions})
-            ORDER BY seq DESC
+            ORDER BY score DESC, seq DESC
             LIMIT ?
           `,
           params,
@@ -393,7 +320,7 @@ export class SemanticConversationMemory {
     } catch (error: any) {
       this.logError('Failed semantic conversation recall', {
         chatId,
-        query: userPrompt,
+        query: input,
         error: getErrorMessage(error),
       });
       return [];
