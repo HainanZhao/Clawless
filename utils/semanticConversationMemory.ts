@@ -27,13 +27,11 @@ function toEntryId(entry: ConversationEntry): string {
   return `${entry.timestamp}|${entry.chatId}|${entry.platform}`;
 }
 
-function buildSearchTerms(input: string): string[] {
+function buildSearchTerms(input: string[]): string[] {
   return Array.from(
     new Set(
       input
-        .toLowerCase()
-        .split(/[^\p{L}\p{N}_]+/u)
-        .map((token) => token.trim())
+        .map((token) => (typeof token === 'string' ? token.trim().toLowerCase() : ''))
         .filter((token) => token.length >= 2)
         .slice(0, 12),
     ),
@@ -244,7 +242,7 @@ export class SemanticConversationMemory {
     }
   }
 
-  async getRelevantEntries(chatId: string, input: string, topK: number): Promise<ConversationEntry[]> {
+  async getRelevantEntries(chatId: string, input: string[], topK: number): Promise<ConversationEntry[]> {
     if (!this.isEnabled || topK <= 0) {
       return [];
     }
@@ -314,7 +312,7 @@ export class SemanticConversationMemory {
     } catch (error: any) {
       this.logError('Failed semantic conversation recall', {
         chatId,
-        query: input,
+        query: JSON.stringify(input),
         error: getErrorMessage(error),
       });
       return [];

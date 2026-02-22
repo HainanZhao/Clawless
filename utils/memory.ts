@@ -102,7 +102,7 @@ export function buildPromptWithMemory(params: {
       : []),
     '**Semantic recall API (on-demand):**',
     `- Endpoint: POST ${semanticRecallEndpoint}`,
-    '- Request body: {"input": "current user question", "chatId": "optional", "topK": 3}',
+    '- Request body: {"input": ["keyword1", "keyword2"], "chatId": "optional", "topK": 3}',
     '- Use this endpoint only when you need additional historical context that is not obvious from current prompt/memory.',
     '- Prefer dynamic fetch over assuming prior context; keep prompts lean unless context is required.',
     '- If `chatId` is omitted, server falls back to persisted bound chat context when available.',

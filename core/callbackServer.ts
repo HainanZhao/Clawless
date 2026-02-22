@@ -107,16 +107,22 @@ export function createCallbackServer({
         return;
       }
 
-      const input =
-        (typeof body?.input === 'string' ? body.input.trim() : '') ||
-        (typeof body?.keywords === 'string' ? body.keywords.trim() : '');
+      if (!Array.isArray(body?.input)) {
+        sendLoggedJson(req, res, 400, { ok: false, error: 'Field `input` must be an array of strings' });
+        return;
+      }
+
+      const input: string[] = body.input
+        .filter((item: any) => typeof item === 'string')
+        .map((s: string) => s.trim());
+
       const chatId = resolveChatId(body?.chatId ?? requestUrl.searchParams.get('chatId') ?? getLastIncomingChatId());
       const topKRaw = Number(body?.topK ?? requestUrl.searchParams.get('topK') ?? conversationHistoryRecapTopK);
       const topK =
         Number.isFinite(topKRaw) && topKRaw > 0 ? Math.max(1, Math.floor(topKRaw)) : conversationHistoryRecapTopK;
 
-      if (!input) {
-        sendLoggedJson(req, res, 400, { ok: false, error: 'Field `input` is required' });
+      if (input.length === 0) {
+        sendLoggedJson(req, res, 400, { ok: false, error: 'Field `input` cannot be empty' });
         return;
       }
 
