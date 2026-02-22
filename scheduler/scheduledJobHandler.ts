@@ -1,10 +1,15 @@
 import type { ScheduleConfig } from './cronScheduler.js';
+import type { JobProgressEvent } from '../acp/tempAcpRunner.js';
 import { getErrorMessage } from '../utils/error.js';
 
 export interface ScheduledJobHandlerDeps {
   logInfo: (message: string, details?: unknown) => void;
   buildPromptWithMemory: (userPrompt: string) => Promise<string>;
-  runScheduledPromptWithTempAcp: (promptForAgent: string, scheduleId: string) => Promise<string>;
+  runScheduledPromptWithTempAcp: (
+    promptForAgent: string,
+    scheduleId: string,
+    onProgress?: (event: JobProgressEvent) => void,
+  ) => Promise<string>;
   resolveTargetChatId: () => string | null;
   sendTextToChat: (chatId: string | number, text: string) => Promise<void>;
   normalizeOutgoingText: (text: unknown) => string;
@@ -50,7 +55,26 @@ export function createScheduledJobHandler(deps: ScheduledJobHandlerDeps) {
         prompt: promptForAgent,
       });
 
-      const response = await runScheduledPromptWithTempAcp(promptForAgent, schedule.id);
+      // Build a progress callback that forwards status updates to the originating chat
+      const progressChatId = schedule.type === 'async_conversation' ? schedule.metadata?.chatId : resolveTargetChatId();
+      let lastProgressStatus: string | null = null;
+
+      const onProgress = progressChatId
+        ? (event: JobProgressEvent) => {
+            // Skip duplicate running updates and completed (the final result message handles it)
+            if (event.status === 'running' && lastProgressStatus === 'running') return;
+            if (event.status === 'completed') return;
+
+            lastProgressStatus = event.status;
+            logInfo('Job progress', { scheduleId: schedule.id, ...event });
+
+            if (event.status === 'failed') {
+              void sendTextToChat(progressChatId, normalizeOutgoingText(`🔄 Job ${schedule.id}: ${event.message}`));
+            }
+          }
+        : undefined;
+
+      const response = await runScheduledPromptWithTempAcp(promptForAgent, schedule.id, onProgress);
 
       if (schedule.type === 'async_conversation') {
         const chatId = schedule.metadata?.chatId;

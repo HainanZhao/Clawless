@@ -13,7 +13,7 @@ import {
   type ConversationHistoryConfig,
 } from '../utils/conversationHistory.js';
 import { SemanticConversationMemory } from '../utils/semanticConversationMemory.js';
-import { runPromptWithCli } from '../acp/tempAcpRunner.js';
+import { runPromptWithCli, type JobProgressEvent } from '../acp/tempAcpRunner.js';
 import { AgentManager } from './AgentManager.js';
 import { MessagingInitializer } from './MessagingInitializer.js';
 import { SchedulerManager } from './SchedulerManager.js';
@@ -110,7 +110,11 @@ export class ClawlessApp {
     });
   }
 
-  private async runScheduledPromptWithCli(promptForAgent: string, scheduleId: string): Promise<string> {
+  private async runScheduledPromptWithCli(
+    promptForAgent: string,
+    scheduleId: string,
+    onProgress?: (event: JobProgressEvent) => void,
+  ): Promise<string> {
     return runPromptWithCli({
       scheduleId,
       promptForAgent,
@@ -122,6 +126,7 @@ export class ClawlessApp {
       stderrTailMaxChars: 4000,
       logInfo,
       logError,
+      onProgress,
       acpMcpServersJson: this.config.ACP_MCP_SERVERS_JSON,
       acpDebugStream: this.config.ACP_DEBUG_STREAM,
     });
