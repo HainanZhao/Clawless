@@ -1,3 +1,5 @@
+import { logWarn } from './error.js';
+
 export function parseAllowlistFromEnv(envValue: string, envKey: string): string[] {
   if (!envValue || envValue.trim() === '') {
     return [];
@@ -9,7 +11,7 @@ export function parseAllowlistFromEnv(envValue: string, envKey: string): string[
       return parsed.map((name) => String(name).trim().replace(/^@/, '')).filter(Boolean);
     }
   } catch {
-    console.warn(`Warning: ${envKey} must be a valid JSON array (e.g., ["user1", "user2"])`);
+    logWarn(`Warning: ${envKey} must be a valid JSON array (e.g., ["user1", "user2"])`);
   }
 
   return [];

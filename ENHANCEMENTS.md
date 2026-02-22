@@ -12,7 +12,7 @@
     *   **Monolithic Entry Point**: `index.ts` is ~400 lines, handling initialization, validation, and shutdown.
     *   **Configuration**: Relies on raw `process.env` access.
     *   **Testing**: No automated test suite found.
-    *   **Logging**: Basic `console.log` wrapper.
+    *   **Logging**: High-performance structured logging with Pino and pino-pretty.
 
 ## Proposed Enhancements
 

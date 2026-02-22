@@ -5,6 +5,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { logError } from './error.js';
 
 // Claude Code config locations to try
 const CLAUDE_CONFIG_PATHS = [
@@ -60,7 +61,7 @@ export function getClaudeMcpServerNames(): string[] {
 
     return [];
   } catch (error) {
-    console.error('Failed to read Claude MCP server names:', error);
+    logError('Failed to read Claude MCP server names:', error);
     return [];
   }
 }
@@ -101,7 +102,7 @@ export function getClaudeMcpServersForAcp(): unknown[] {
       })
       .filter(Boolean);
   } catch (error) {
-    console.error('Failed to read Claude MCP servers for ACP:', error);
+    logError('Failed to read Claude MCP servers for ACP:', error);
     return [];
   }
 }

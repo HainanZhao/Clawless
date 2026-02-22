@@ -8,7 +8,7 @@ import {
 } from '../core/agents/index.js';
 import { createAcpRuntime, type AcpRuntime } from '../acp/runtimeManager.js';
 import { buildPermissionResponse, noOpAcpFileOperation } from '../acp/clientHelpers.js';
-import { getErrorMessage, logInfo } from '../utils/error.js';
+import { getErrorMessage, logInfo, logError } from '../utils/error.js';
 import { ensureMemoryFile } from '../utils/memory.js';
 import type { Config } from '../utils/config.js';
 
@@ -31,8 +31,8 @@ export class AgentManager {
     try {
       cliAgentType = validateAgentType(this.config.CLI_AGENT);
     } catch (error: any) {
-      console.error(`Error: ${error.message}`);
-      console.error(`Available agents: ${SUPPORTED_AGENTS.join(', ')}`);
+      logError(`Error: ${error.message}`);
+      logError(`Available agents: ${SUPPORTED_AGENTS.join(', ')}`);
       process.exit(1);
     }
 
@@ -64,6 +64,7 @@ export class AgentManager {
       noOpAcpFileOperation,
       getErrorMessage,
       logInfo,
+      logError,
     });
   }
 
@@ -81,7 +82,7 @@ export class AgentManager {
   public validateCliAgentOrExit(): void {
     const validation = this.cliAgent.validate();
     if (!validation.valid) {
-      console.error(`Error: ${validation.error}`);
+      logError(`Error: ${validation.error}`);
       process.exit(1);
     }
   }

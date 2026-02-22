@@ -5,6 +5,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { logError } from './error.js';
 
 const GEMINI_SETTINGS_PATH = join(homedir(), '.gemini', 'settings.json');
 
@@ -42,7 +43,7 @@ export function getGeminiMcpServerNames(): string[] {
 
     return [];
   } catch (error) {
-    console.error('Failed to read Gemini MCP server names:', error);
+    logError('Failed to read Gemini MCP server names:', error);
     return [];
   }
 }
@@ -93,7 +94,7 @@ export function getGeminiMcpServersForAcp(): unknown[] {
       })
       .filter(Boolean);
   } catch (error) {
-    console.error('Failed to read Gemini MCP servers for ACP:', error);
+    logError('Failed to read Gemini MCP servers for ACP:', error);
     return [];
   }
 }

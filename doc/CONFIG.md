@@ -133,6 +133,8 @@ All `config.json` keys, defaults, and meanings:
 | `conversationSemanticMaxEntries` | `1000` | Max retained semantic entries (FIFO). |
 | `conversationSemanticMaxCharsPerEntry` | `4000` | Max chars per entry used for lexical recall indexing. |
 | `schedulesFilePath` | `~/.clawless/schedules.json` | Scheduler persistence file path. |
+| `logLevel` | `info` (prod) / `debug` (dev) | Minimum log level (`debug`, `info`, `warn`, `error`). |
+| `logFormat` | `pretty` | Output format (`pretty` or `json`). |
 
 ## CLI Agent Selection
 

@@ -1,3 +1,5 @@
+import logger from './logger.js';
+
 export function getErrorMessage(error: unknown, fallback = 'Unknown error'): string {
   if (error instanceof Error) {
     return error.message;
@@ -32,21 +34,41 @@ export function getErrorMessage(error: unknown, fallback = 'Unknown error'): str
 }
 
 export function logInfo(message: string, details?: unknown) {
-  const timestamp = new Date().toISOString();
-  if (details !== undefined) {
-    console.log(`[${timestamp}] INFO: ${message}`, details);
-    return;
+  if (details instanceof Error) {
+    logger.info(details, message);
+  } else if (details !== undefined) {
+    logger.info({ details }, message);
+  } else {
+    logger.info(message);
   }
-
-  console.log(`[${timestamp}] INFO: ${message}`);
 }
 
 export function logError(message: string, details?: unknown) {
-  const timestamp = new Date().toISOString();
-  if (details !== undefined) {
-    console.error(`[${timestamp}] ERROR: ${message}`, details);
-    return;
+  if (details instanceof Error) {
+    logger.error(details, message);
+  } else if (details !== undefined) {
+    logger.error({ details }, message);
+  } else {
+    logger.error(message);
   }
+}
 
-  console.error(`[${timestamp}] ERROR: ${message}`);
+export function logDebug(message: string, details?: unknown) {
+  if (details instanceof Error) {
+    logger.debug(details, message);
+  } else if (details !== undefined) {
+    logger.debug({ details }, message);
+  } else {
+    logger.debug(message);
+  }
+}
+
+export function logWarn(message: string, details?: unknown) {
+  if (details instanceof Error) {
+    logger.warn(details, message);
+  } else if (details !== undefined) {
+    logger.warn({ details }, message);
+  } else {
+    logger.warn(message);
+  }
 }

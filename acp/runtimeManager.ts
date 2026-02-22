@@ -29,6 +29,7 @@ type CreateAcpRuntimeParams = {
   noOpAcpFileOperation: (params: any) => any;
   getErrorMessage: GetErrorMessageFn;
   logInfo: LogInfoFn;
+  logError: LogInfoFn;
 };
 
 export type AcpRuntime = {
@@ -63,6 +64,7 @@ export function createAcpRuntime({
   noOpAcpFileOperation,
   getErrorMessage,
   logInfo,
+  logError,
 }: CreateAcpRuntimeParams): AcpRuntime {
   const agentCommand = cliAgent.getCommand();
   const agentDisplayName = cliAgent.getDisplayName();
@@ -303,7 +305,7 @@ export function createAcpRuntime({
         appendAgentStderrTail(rawText);
         const text = rawText.trim();
         if (text) {
-          console.error(`[${stderrPrefixToken}] ${text}`);
+          logError(`[${stderrPrefixToken}] ${text}`);
         }
         if (activePromptCollector) {
           activePromptCollector.onActivity();
@@ -311,12 +313,12 @@ export function createAcpRuntime({
       });
 
       agentProcess.on('error', (error: Error) => {
-        console.error(`${agentDisplayName} ACP process error:`, error.message);
+        logError(`${agentDisplayName} ACP process error:`, error.message);
         resetAcpRuntime();
       });
 
       agentProcess.on('close', (code: number, signal: string) => {
-        console.error(`${agentDisplayName} ACP process closed (code=${code}, signal=${signal})`);
+        logError(`${agentDisplayName} ACP process closed (code=${code}, signal=${signal})`);
         resetAcpRuntime();
       });
 

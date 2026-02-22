@@ -1,6 +1,7 @@
 import { Telegraf } from 'telegraf';
 import telegramifyMarkdown from 'telegramify-markdown';
 import { splitIntoSmartChunks } from './messageTruncator.js';
+import { logError } from '../utils/error.js';
 
 const TELEGRAM_PARSE_MODE = 'MarkdownV2' as const;
 
@@ -26,7 +27,7 @@ export function toTelegramMarkdown(text: string): string {
   }
 }
 
-class TelegramMessageContext {
+export class TelegramMessageContext {
   ctx: any;
   typingIntervalMs: number;
   maxMessageLength: number;
@@ -165,7 +166,7 @@ export class TelegramMessagingClient {
     this.bot.on('text', (ctx) => {
       const messageContext = new TelegramMessageContext(ctx, this.typingIntervalMs, this.maxMessageLength);
       Promise.resolve(handler(messageContext)).catch((error) => {
-        console.error('Text message handler failed:', error);
+        logError('Text message handler failed:', error);
       });
     });
   }

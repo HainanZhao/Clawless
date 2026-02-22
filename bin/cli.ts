@@ -7,6 +7,7 @@ import process from 'node:process';
 import dotenv from 'dotenv';
 import { runConfigTui } from './configTui.js';
 import { getConfig, resetConfig } from '../utils/config.js';
+import { logError } from '../utils/error.js';
 
 // Resolve package metadata relative to this file (works for both src bin/ and dist/bin/)
 const _binDir = path.dirname(new URL(import.meta.url).pathname);
@@ -375,6 +376,6 @@ async function main() {
 }
 
 main().catch((error: any) => {
-  console.error(`[clawless] ${error.message}`);
+  logError(`[clawless] ${error.message}`);
   process.exit(1);
 });

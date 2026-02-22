@@ -3,17 +3,22 @@ import { createScheduledJobHandler } from '../scheduler/scheduledJobHandler.js';
 import { logInfo } from '../utils/error.js';
 import { normalizeOutgoingText } from '../utils/commandText.js';
 import type { Config } from '../utils/config.js';
-import type { MessagingClient } from './MessagingInitializer.js';
+import type { MessagingClient, MessageContext } from './MessagingInitializer.js';
 import type { BaseCliAgent } from '../core/agents/index.js';
+import type { JobProgressEvent } from '../acp/tempAcpRunner.js';
 
 export interface SchedulerManagerOptions {
   config: Config;
   getMessagingClient: () => MessagingClient;
   cliAgent: BaseCliAgent;
   buildPromptWithMemory: (userPrompt: string) => Promise<string>;
-  runScheduledPromptWithTempAcp: (promptForAgent: string, scheduleId: string) => Promise<string>;
+  runScheduledPromptWithTempAcp: (
+    promptForAgent: string,
+    scheduleId: string,
+    onProgress?: (event: JobProgressEvent) => void,
+  ) => Promise<string>;
   resolveTargetChatId: () => string | null;
-  getEnqueueMessage: () => (messageContext: any) => Promise<void>;
+  getEnqueueMessage: () => (messageContext: MessageContext) => Promise<void>;
   appendContextToAgent: (text: string) => Promise<void>;
 }
 

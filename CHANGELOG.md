@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.4.8] - 2026-02-22
+
+### Added
+
+- **Pino Logger**: Integrated pino for structured logging with pino-pretty for development, supporting JSON output in production.
+- **OnProgress Callback**: Added progress callback support for async operations in the runtime manager.
+
+### Changed
+
+- **Semantic Recall API**: Refactored to accept an array of keywords for more flexible context retrieval.
+
+### Fixed
+
+- Various code refactoring and bug fixes across runtime manager, scheduler, and messaging components.
+
+---
+
 ## [0.4.7] - 2026-02-22
 
 
