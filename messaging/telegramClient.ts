@@ -85,12 +85,12 @@ class TelegramMessageContext {
         parse_mode: TELEGRAM_PARSE_MODE,
       });
     } catch (error: any) {
-       const errorMessage = String(error?.message || '').toLowerCase();
-       if (errorMessage.includes('reserved') || errorMessage.includes('parse entities')) {
-          await this.ctx.telegram.editMessageText(this.ctx.chat.id, messageId, undefined, escapeMarkdownV2(text || '…'), {
-            parse_mode: TELEGRAM_PARSE_MODE,
-          });
-       }
+      const errorMessage = String(error?.message || '').toLowerCase();
+      if (errorMessage.includes('reserved') || errorMessage.includes('parse entities')) {
+        await this.ctx.telegram.editMessageText(this.ctx.chat.id, messageId, undefined, escapeMarkdownV2(text || '…'), {
+          parse_mode: TELEGRAM_PARSE_MODE,
+        });
+      }
     }
   }
 

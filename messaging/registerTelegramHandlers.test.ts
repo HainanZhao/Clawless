@@ -7,7 +7,7 @@ describe('registerTelegramHandlers', () => {
       onTextMessage: vi.fn(),
       onError: vi.fn(),
     };
-    
+
     registerTelegramHandlers({
       messagingClient: messagingClient as any,
       telegramWhitelist: [],

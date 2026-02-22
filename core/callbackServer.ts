@@ -107,7 +107,9 @@ export function createCallbackServer({
         return;
       }
 
-      const input = (typeof body?.input === 'string' ? body.input.trim() : '') || (typeof body?.keywords === 'string' ? body.keywords.trim() : '');
+      const input =
+        (typeof body?.input === 'string' ? body.input.trim() : '') ||
+        (typeof body?.keywords === 'string' ? body.keywords.trim() : '');
       const chatId = resolveChatId(body?.chatId ?? requestUrl.searchParams.get('chatId') ?? getLastIncomingChatId());
       const topKRaw = Number(body?.topK ?? requestUrl.searchParams.get('topK') ?? conversationHistoryRecapTopK);
       const topK =

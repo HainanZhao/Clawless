@@ -341,8 +341,9 @@ describe('messageTruncator', () => {
     });
 
     it('should split a long error stack trace inside a code block', () => {
-      const lines = Array.from({ length: 20 }, (_, i) =>
-        `    at Module${i}.execute (src/module${i}.ts:${10 + i}:${5 + i})`,
+      const lines = Array.from(
+        { length: 20 },
+        (_, i) => `    at Module${i}.execute (src/module${i}.ts:${10 + i}:${5 + i})`,
       );
       const text = `Error: Connection refused\n\`\`\`\n${lines.join('\n')}\n\`\`\``;
 
@@ -401,9 +402,7 @@ describe('messageTruncator', () => {
       const chunks = splitIntoSmartChunks(text, 90);
 
       // The link must be fully intact in one chunk
-      const linkChunk = chunks.find((c) =>
-        c.includes('[docs](https://example.com/very/long/documentation/path)'),
-      );
+      const linkChunk = chunks.find((c) => c.includes('[docs](https://example.com/very/long/documentation/path)'));
       expect(linkChunk).toBeDefined();
     });
 
@@ -421,9 +420,7 @@ describe('messageTruncator', () => {
           c.includes('`curl -X POST https://api.example.com/v1/users -H "Authorization: Bearer $TOKEN"`'),
         ),
       ).toBe(true);
-      expect(
-        chunks.some((c) => c.includes('`{"id": 123, "status": "created"}`')),
-      ).toBe(true);
+      expect(chunks.some((c) => c.includes('`{"id": 123, "status": "created"}`'))).toBe(true);
     });
 
     it('should handle a realistic multi-paragraph agent response near Telegram limit', () => {
@@ -452,11 +449,7 @@ describe('messageTruncator', () => {
       // Key constructs intact
       expect(chunks.some((c) => c.includes('`DEPLOY_TARGET`'))).toBe(true);
       expect(chunks.some((c) => c.includes('`.gitlab-ci.yml`'))).toBe(true);
-      expect(
-        chunks.some((c) =>
-          c.includes('[CI/CD page](https://gitlab.example.com/project/-/pipelines)'),
-        ),
-      ).toBe(true);
+      expect(chunks.some((c) => c.includes('[CI/CD page](https://gitlab.example.com/project/-/pipelines)'))).toBe(true);
     });
 
     it('should preserve all text content when splitting (no data loss)', () => {
@@ -484,22 +477,17 @@ describe('messageTruncator', () => {
       expect(chunks.length).toBeGreaterThan(1);
 
       // Links with bold inside must stay intact
+      expect(chunks.some((c) => c.includes('[**Critical** findings](https://security.example.com/report/2024)'))).toBe(
+        true,
+      );
       expect(
-        chunks.some((c) =>
-          c.includes('[**Critical** findings](https://security.example.com/report/2024)'),
-        ),
-      ).toBe(true);
-      expect(
-        chunks.some((c) =>
-          c.includes('[**High** priority items](https://security.example.com/report/high)'),
-        ),
+        chunks.some((c) => c.includes('[**High** priority items](https://security.example.com/report/high)')),
       ).toBe(true);
     });
 
     it('should handle a code block immediately followed by a link', () => {
       const text =
-        '```bash\nnpm install\nnpm run build\n```\n' +
-        'See [setup guide](https://docs.example.com/setup) for details.';
+        '```bash\nnpm install\nnpm run build\n```\n' + 'See [setup guide](https://docs.example.com/setup) for details.';
 
       const chunks = splitIntoSmartChunks(text, 50);
 
@@ -507,9 +495,7 @@ describe('messageTruncator', () => {
         const count = (chunk.match(/```/g) || []).length;
         expect(count % 2).toBe(0);
       }
-      expect(
-        chunks.some((c) => c.includes('[setup guide](https://docs.example.com/setup)')),
-      ).toBe(true);
+      expect(chunks.some((c) => c.includes('[setup guide](https://docs.example.com/setup)'))).toBe(true);
     });
   });
 });

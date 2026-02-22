@@ -53,6 +53,7 @@ function toConversationEntry(row: SemanticRow): ConversationEntry {
 export class SemanticConversationMemory {
   private readonly config: SemanticConversationMemoryConfig;
   private readonly logError: LogFn;
+  private readonly logInfo: LogFn;
   private runtimeDisabled = false;
   private runtimeDisableLogged = false;
   private sqlModulePromise: Promise<any> | null = null;
@@ -257,7 +258,9 @@ export class SemanticConversationMemory {
 
       if (keywords.length > 0) {
         const scoreSql = keywords
-          .map(() => '(CASE WHEN user_message LIKE ? THEN 1 ELSE 0 END + CASE WHEN bot_response LIKE ? THEN 1 ELSE 0 END)')
+          .map(
+            () => '(CASE WHEN user_message LIKE ? THEN 1 ELSE 0 END + CASE WHEN bot_response LIKE ? THEN 1 ELSE 0 END)',
+          )
           .join(' + ');
 
         const conditions = keywords.map(() => '(user_message LIKE ? OR bot_response LIKE ?)').join(' OR ');
