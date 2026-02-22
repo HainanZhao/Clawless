@@ -121,6 +121,7 @@ export class ClawlessApp {
       permissionStrategy: this.config.ACP_PERMISSION_STRATEGY,
       stderrTailMaxChars: 4000,
       logInfo,
+      logError,
       acpMcpServersJson: this.config.ACP_MCP_SERVERS_JSON,
       acpDebugStream: this.config.ACP_DEBUG_STREAM,
     });
@@ -180,7 +181,7 @@ export class ClawlessApp {
         }, this.config.HEARTBEAT_INTERVAL_MS);
       }
     } catch (error: any) {
-      console.error('Failed to launch bot:', error);
+      logError('Failed to launch bot:', error);
       process.exit(1);
     }
   }
@@ -190,7 +191,7 @@ export class ClawlessApp {
 
     for (const signal of shutdownSignals) {
       process.once(signal, () => {
-        console.log(`Received ${signal}, stopping bot...`);
+        logInfo(`Received ${signal}, stopping bot...`);
         this.schedulerManager.shutdown();
         this.callbackServerManager.stop();
         this.messagingInitializer.stop(signal);

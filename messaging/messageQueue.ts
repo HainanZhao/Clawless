@@ -3,12 +3,14 @@ type LogInfoFn = (message: string, details?: unknown) => void;
 type CreateMessageQueueProcessorParams = {
   processSingleMessage: (messageContext: any, requestId: number) => Promise<void>;
   logInfo: LogInfoFn;
+  logError: LogInfoFn;
   getErrorMessage: (error: unknown, fallbackMessage?: string) => string;
 };
 
 export function createMessageQueueProcessor({
   processSingleMessage,
   logInfo,
+  logError,
   getErrorMessage,
 }: CreateMessageQueueProcessorParams) {
   const messageQueue: Array<any> = [];
@@ -45,8 +47,7 @@ export function createMessageQueueProcessor({
       }
     } catch (error: any) {
       isQueueProcessing = false;
-      logInfo('Queue processing error', { error: getErrorMessage(error) });
-      console.error('Queue processing error:', error);
+      logError('Queue processing error', error);
     }
   };
 
@@ -61,8 +62,7 @@ export function createMessageQueueProcessor({
       }
 
       processQueue().catch((error) => {
-        logInfo('Queue processor failed', { requestId, error: getErrorMessage(error) });
-        console.error('Queue processor failed:', error);
+        logError('Queue processor failed', error);
       });
     });
   };

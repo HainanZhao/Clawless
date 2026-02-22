@@ -5,6 +5,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { logError } from './error.js';
 
 // OpenCode config locations to try
 const OPENCODE_CONFIG_PATHS = [
@@ -58,7 +59,7 @@ export function getOpenCodeMcpServerNames(): string[] {
 
     return [];
   } catch (error) {
-    console.error('Failed to read OpenCode MCP server names:', error);
+    logError('Failed to read OpenCode MCP server names:', error);
     return [];
   }
 }
@@ -99,7 +100,7 @@ export function getOpenCodeMcpServersForAcp(): unknown[] {
       })
       .filter(Boolean);
   } catch (error) {
-    console.error('Failed to read OpenCode MCP servers for ACP:', error);
+    logError('Failed to read OpenCode MCP servers for ACP:', error);
     return [];
   }
 }

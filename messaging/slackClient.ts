@@ -1,5 +1,6 @@
 import { App } from '@slack/bolt';
 import { slackifyMarkdown } from 'slackify-markdown';
+import { logInfo, logError } from '../utils/error.js';
 
 type SlackEvent = {
   channel: string;
@@ -164,7 +165,7 @@ class SlackMessageContext {
         ts: messageTs,
       });
     } catch (error) {
-      console.error('Failed to delete Slack message:', error);
+      logError('Failed to delete Slack message:', error);
     }
   }
 }
@@ -221,7 +222,7 @@ export class SlackMessagingClient {
           try {
             await Promise.resolve(handler(messageContext));
           } catch (error) {
-            console.error('Slack message handler failed:', error);
+            logError('Slack message handler failed:', error);
             this.handleError(error as Error, messageContext);
           }
         }
@@ -229,7 +230,7 @@ export class SlackMessagingClient {
     });
 
     this.app.error(async (error) => {
-      console.error('Slack app error:', error);
+      logError('Slack app error:', error);
       this.handleError(error as Error, null);
     });
   }
@@ -247,14 +248,14 @@ export class SlackMessagingClient {
       try {
         handler(error, messageContext);
       } catch (handlerError) {
-        console.error('Error handler itself failed:', handlerError);
+        logError('Error handler itself failed:', handlerError);
       }
     }
   }
 
   async launch() {
     await this.app.start();
-    console.log('⚡️ Slack app is running!');
+    logInfo('⚡️ Slack app is running!');
   }
 
   async sendTextToChat(chatId: string | number, text: string) {
@@ -270,7 +271,7 @@ export class SlackMessagingClient {
   }
 
   stop(reason: string) {
-    console.log(`Stopping Slack client: ${reason}`);
+    logInfo(`Stopping Slack client: ${reason}`);
     this.app.stop();
   }
 }

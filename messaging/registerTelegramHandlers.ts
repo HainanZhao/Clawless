@@ -12,6 +12,8 @@ type RegisterTelegramHandlersParams = {
   enqueueMessage: (messageContext: any) => Promise<void>;
   onAbortRequested: () => void;
   onChatBound: (chatId: string) => void;
+  logError: (message: string, details?: unknown) => void;
+  logWarn: (message: string, details?: unknown) => void;
 };
 
 export function registerTelegramHandlers({
@@ -24,6 +26,8 @@ export function registerTelegramHandlers({
   enqueueMessage,
   onAbortRequested,
   onChatBound,
+  logError,
+  logWarn,
 }: RegisterTelegramHandlersParams) {
   const handleIncomingTelegramMessage = async (messageContext: any) => {
     const principals = [messageContext.username, messageContext.userId]
@@ -34,7 +38,7 @@ export function registerTelegramHandlers({
     const isAuthorized = principals.some((principal) => isUserAuthorized(principal, telegramWhitelist));
 
     if (enforceWhitelist && !isAuthorized) {
-      console.warn(
+      logWarn(
         `Unauthorized access attempt from username: ${messageContext.username ?? 'none'} (ID: ${messageContext.userId ?? 'unknown'})`,
       );
       await messageContext.sendText('🚫 Unauthorized. This bot is restricted to authorized users only.');
@@ -58,7 +62,7 @@ export function registerTelegramHandlers({
     }
 
     enqueueMessage(messageContext).catch(async (error: unknown) => {
-      console.error('Error processing message:', error);
+      logError('Error processing message:', error);
       const errorMessage = getErrorMessage(error);
       if (errorMessage.toLowerCase().includes('aborted by user')) {
         await messageContext.sendText('⏹️ Agent action stopped.');
@@ -69,7 +73,7 @@ export function registerTelegramHandlers({
   };
 
   const handleTelegramClientError = (error: Error, messageContext: any) => {
-    console.error(`${platformLabel} client error:`, error);
+    logError(`${platformLabel} client error:`, error);
     if (messageContext) {
       messageContext.sendText('⚠️ An error occurred while processing your request.').catch(() => {});
     }

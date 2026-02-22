@@ -12,6 +12,14 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["index.ts", "bin/**/*.ts", "messaging/**/*.ts"],
+  "include": [
+    "index.ts",
+    "bin/**/*.ts",
+    "messaging/**/*.ts",
+    "utils/**/*.ts",
+    "core/**/*.ts",
+    "scheduler/**/*.ts",
+    "app/**/*.ts"
+  ],
   "exclude": ["dist", "node_modules"]
 }

@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
+import { logError } from './error.js';
 
 export function expandHomePath(value: string): string {
   if (!value || value === '~') {
@@ -60,6 +61,8 @@ const configSchema = z.object({
   CONVERSATION_SEMANTIC_MAX_ENTRIES: z.coerce.number().default(1000),
   CONVERSATION_SEMANTIC_MAX_CHARS_PER_ENTRY: z.coerce.number().default(4000),
   SCHEDULES_FILE_PATH: z.string().optional(),
+  LOG_LEVEL: z.string().optional(),
+  LOG_FORMAT: z.enum(['pretty', 'json']).default('pretty'),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -76,9 +79,9 @@ export function getConfig(): Config {
   const result = configSchema.safeParse(process.env);
 
   if (!result.success) {
-    console.error('❌ Invalid configuration:');
+    logError('❌ Invalid configuration:');
     for (const error of result.error.issues) {
-      console.error(`  - ${error.path.join('.')}: ${error.message}`);
+      logError(`  - ${error.path.join('.')}: ${error.message}`);
     }
     process.exit(1);
   }
@@ -107,22 +110,22 @@ export function getConfig(): Config {
   // Perform conditional validation
   if (config.MESSAGING_PLATFORM === 'telegram') {
     if (!config.TELEGRAM_TOKEN) {
-      console.error('❌ Error: TELEGRAM_TOKEN environment variable is required for Telegram');
+      logError('❌ Error: TELEGRAM_TOKEN environment variable is required for Telegram');
       process.exit(1);
     }
     if (config.TELEGRAM_TOKEN.includes('your_telegram_bot_token_here') || !config.TELEGRAM_TOKEN.includes(':')) {
-      console.error('❌ Error: TELEGRAM_TOKEN looks invalid. Set a real token from @BotFather in your config/env.');
+      logError('❌ Error: TELEGRAM_TOKEN looks invalid. Set a real token from @BotFather in your config/env.');
       process.exit(1);
     }
   }
 
   if (config.MESSAGING_PLATFORM === 'slack') {
     if (!config.SLACK_BOT_TOKEN) {
-      console.error('❌ Error: SLACK_BOT_TOKEN environment variable is required for Slack');
+      logError('❌ Error: SLACK_BOT_TOKEN environment variable is required for Slack');
       process.exit(1);
     }
     if (!config.SLACK_SIGNING_SECRET) {
-      console.error('❌ Error: SLACK_SIGNING_SECRET environment variable is required for Slack');
+      logError('❌ Error: SLACK_SIGNING_SECRET environment variable is required for Slack');
       process.exit(1);
     }
   }

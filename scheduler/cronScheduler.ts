@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import fs from 'node:fs';
 import path from 'node:path';
-import { getErrorMessage } from '../utils/error.js';
+import { getErrorMessage, logError, logInfo, logWarn } from '../utils/error.js';
 
 export interface ScheduleConfig {
   id: string;
@@ -69,11 +69,7 @@ export class CronScheduler {
     this.logInfo =
       options.logInfo ||
       ((message: string, details?: unknown) => {
-        if (details !== undefined) {
-          console.log(`[CronScheduler] ${message}`, details);
-        } else {
-          console.log(`[CronScheduler] ${message}`);
-        }
+        logInfo(`[CronScheduler] ${message}`, details);
       });
 
     this.loadPersistedSchedules();
@@ -331,7 +327,7 @@ export class CronScheduler {
       await this.jobCallback(config);
       this.logInfo('jobCallback completed', { scheduleId: config.id });
     } catch (error: any) {
-      console.error(`[CronScheduler] Immediate job ${config.id} execution failed: ${getErrorMessage(error)}`);
+      logError(`[CronScheduler] Immediate job ${config.id} execution failed: ${getErrorMessage(error)}`);
     }
 
     return config.id;
@@ -348,7 +344,7 @@ export class CronScheduler {
 
     // Skip if job is already in flight (prevents overlapping executions)
     if (job.inFlight) {
-      console.warn(`[CronScheduler] Job ${scheduleId} skipped - previous execution still in progress`);
+      logWarn(`[CronScheduler] Job ${scheduleId} skipped - previous execution still in progress`);
       return;
     }
 
@@ -359,7 +355,7 @@ export class CronScheduler {
     try {
       await this.jobCallback(job.config);
     } catch (error: any) {
-      console.error(`[CronScheduler] Job ${scheduleId} execution failed: ${getErrorMessage(error)}`);
+      logError(`[CronScheduler] Job ${scheduleId} execution failed: ${getErrorMessage(error)}`);
     } finally {
       job.inFlight = false;
     }

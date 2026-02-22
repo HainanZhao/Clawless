@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { handleSchedulerApiRequest } from '../scheduler/schedulerApiHandler.js';
 import { sendJson, isCallbackAuthorized, readRequestBody } from '../utils/httpHelpers.js';
-import { getErrorMessage } from '../utils/error.js';
+import { getErrorMessage, logError } from '../utils/error.js';
 import { normalizeOutgoingText } from '../utils/commandText.js';
 import { resolveChatId } from '../utils/callbackState.js';
 import { formatConversationHistoryForPrompt } from '../utils/conversationHistory.js';
@@ -234,7 +234,7 @@ export function createCallbackServer({
         return;
       }
 
-      console.error('Callback server error:', error);
+      logError('Callback server error:', error);
     });
 
     callbackServer.listen(callbackPort, callbackHost, () => {

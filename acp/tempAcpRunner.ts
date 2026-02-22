@@ -12,6 +12,7 @@ export interface TempAcpRunnerOptions {
   permissionStrategy?: string;
   stderrTailMaxChars?: number;
   logInfo: (message: string, details?: unknown) => void;
+  logError: (message: string, details?: unknown) => void;
   acpMcpServersJson?: string;
   acpDebugStream?: boolean;
 }
@@ -81,7 +82,7 @@ function terminateProcessGracefully(
  * This is simpler than ACP and suitable for one-shot background tasks.
  */
 export async function runPromptWithCli(options: TempAcpRunnerOptions): Promise<string> {
-  const { scheduleId, promptForAgent, cliAgent, cwd, timeoutMs, logInfo } = options;
+  const { scheduleId, promptForAgent, cliAgent, cwd, timeoutMs, logInfo, logError } = options;
 
   const command = cliAgent.getCommand();
   const args = cliAgent.buildPromptArgs(promptForAgent);
@@ -131,7 +132,7 @@ export async function runPromptWithCli(options: TempAcpRunnerOptions): Promise<s
       const text = chunk.toString();
       stderrData += text;
       if (text.trim()) {
-        console.error(`[${stderrPrefixToken}:scheduler:${scheduleId}] ${text.trim()}`);
+        logError(`[${stderrPrefixToken}:scheduler:${scheduleId}] ${text.trim()}`);
       }
     });
 

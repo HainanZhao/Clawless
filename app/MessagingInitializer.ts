@@ -5,7 +5,7 @@ import { processSingleTelegramMessage } from '../messaging/liveMessageProcessor.
 import { createMessageQueueProcessor } from '../messaging/messageQueue.js';
 import { registerTelegramHandlers } from '../messaging/registerTelegramHandlers.js';
 import { parseAllowlistFromEnv, parseWhitelistFromEnv } from '../utils/telegramWhitelist.js';
-import { getErrorMessage, logInfo } from '../utils/error.js';
+import { getErrorMessage, logInfo, logError, logWarn } from '../utils/error.js';
 import { persistCallbackChatId, ensureClawlessHomeDirectory } from '../utils/callbackState.js';
 import type { Config } from '../utils/config.js';
 import type { AcpRuntime } from '../acp/runtimeManager.js';
@@ -37,7 +37,7 @@ export class MessagingInitializer {
     const SLACK_WHITELIST = parseAllowlistFromEnv(this.config.SLACK_WHITELIST, 'SLACK_WHITELIST');
     if (this.config.MESSAGING_PLATFORM === 'telegram') {
       if (TELEGRAM_WHITELIST.length === 0) {
-        console.error('Error: TELEGRAM_WHITELIST is required in Telegram mode.');
+        logError('Error: TELEGRAM_WHITELIST is required in Telegram mode.');
         process.exit(1);
       }
       this.messagingClient = new TelegramMessagingClient({
@@ -47,7 +47,7 @@ export class MessagingInitializer {
       });
     } else {
       if (SLACK_WHITELIST.length === 0) {
-        console.error('Error: SLACK_WHITELIST is required in Slack mode.');
+        logError('Error: SLACK_WHITELIST is required in Slack mode.');
         process.exit(1);
       }
       this.messagingClient = new SlackMessagingClient({
@@ -98,6 +98,7 @@ export class MessagingInitializer {
         });
       },
       logInfo,
+      logError,
       getErrorMessage,
     });
 
@@ -122,6 +123,8 @@ export class MessagingInitializer {
         );
         options.onChatBound(chatId);
       },
+      logError,
+      logWarn,
     });
   }
 

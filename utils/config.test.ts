@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import os from 'node:os';
 import path from 'node:path';
-import { getConfig, expandHomePath, resetConfig } from './config';
+import { getConfig, expandHomePath, resetConfig } from './config.js';
+import * as errorUtils from './error.js';
 
 vi.mock('node:os');
 
@@ -73,10 +74,10 @@ describe('config utils', () => {
       vi.spyOn(process, 'exit').mockImplementation(() => {
         throw new Error('process.exit called');
       });
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const logErrorSpy = vi.spyOn(errorUtils, 'logError').mockImplementation(() => {});
 
       expect(() => getConfig()).toThrow('process.exit called');
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(logErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining('TELEGRAM_TOKEN environment variable is required'),
       );
     });
@@ -88,10 +89,10 @@ describe('config utils', () => {
       vi.spyOn(process, 'exit').mockImplementation(() => {
         throw new Error('process.exit called');
       });
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const logErrorSpy = vi.spyOn(errorUtils, 'logError').mockImplementation(() => {});
 
       expect(() => getConfig()).toThrow('process.exit called');
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(logErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining('SLACK_BOT_TOKEN environment variable is required'),
       );
     });
