@@ -1,17 +1,19 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SemanticConversationMemory } from './semanticConversationMemory.js';
 
-vi.mock('sql.js', () => ({
-  default: async () => {
-    throw new Error('mock sql.js init failure');
-  },
-}));
+// Spy on the prototype's getSqlModule to prevent actual WASM loading.
+// vi.mock('sql.js') can fail to intercept dynamic import() on some platforms.
+beforeEach(() => {
+  vi.spyOn(
+    SemanticConversationMemory.prototype as any,
+    'getSqlModule',
+  ).mockRejectedValue(new Error('mock: sql.js unavailable in test'));
+});
 
 describe('SemanticConversationMemory', () => {
   it('should log an error when failing to initialize the database', async () => {
     const logInfo = vi.fn();
     const logError = vi.fn();
-    // Using a path that is likely to fail due to permissions or being a directory
     const config = {
       enabled: true,
       storePath: '/proc/invalid_path/db.sqlite',
@@ -34,7 +36,7 @@ describe('SemanticConversationMemory', () => {
 
     expect(logError).toHaveBeenCalled();
     const errorCall = logError.mock.calls.find(call => 
-      call[0].includes('Failed to index') || call[0].includes('failed to initialize semantic memory database')
+      call[0].includes('Failed to index') || call[0].includes('Semantic memory disabled at runtime')
     );
     expect(errorCall).toBeDefined();
   });
@@ -55,7 +57,7 @@ describe('SemanticConversationMemory', () => {
 
     expect(logError).toHaveBeenCalled();
     const errorCall = logError.mock.calls.find(call => 
-      call[0].includes('Failed semantic conversation recall') || call[0].includes('failed to initialize semantic memory database')
+      call[0].includes('Failed semantic conversation recall') || call[0].includes('Semantic memory disabled at runtime')
     );
     expect(errorCall).toBeDefined();
   });
