@@ -60,16 +60,11 @@ export function createScheduledJobHandler(deps: ScheduledJobHandlerDeps) {
 
       const onProgress = progressChatId
         ? (event: JobProgressEvent) => {
-            // Send all progress updates so user knows job is still running (not crashed)
-            // Skip only completed (final result message handles it)
-            if (event.status === 'completed') return;
-
+            // Log all progress updates server-side so we can debug
             logInfo('Job progress', { scheduleId: schedule.id, ...event });
 
+            // Only notify user on failure (completed has separate result message)
             if (event.status === 'failed') {
-              void sendTextToChat(progressChatId, normalizeOutgoingText(`🔄 Job ${schedule.id}: ${event.message}`));
-            } else {
-              // Send running status updates so user knows it's still working
               void sendTextToChat(progressChatId, normalizeOutgoingText(`🔄 Job ${schedule.id}: ${event.message}`));
             }
           }
