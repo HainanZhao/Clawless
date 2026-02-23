@@ -1,8 +1,6 @@
 import path from 'node:path';
 import { TelegramMessagingClient } from '../messaging/telegramClient.js';
-import type { TelegramMessageContext } from '../messaging/telegramClient.js';
 import { SlackMessagingClient } from '../messaging/slackClient.js';
-import type { SlackMessageContext } from '../messaging/slackClient.js';
 import { processSingleTelegramMessage } from '../messaging/liveMessageProcessor.js';
 import { createMessageQueueProcessor } from '../messaging/messageQueue.js';
 import { registerTelegramHandlers } from '../messaging/registerTelegramHandlers.js';
@@ -14,9 +12,14 @@ import type { AcpRuntime } from '../acp/runtimeManager.js';
 import type { CronScheduler } from '../scheduler/cronScheduler.js';
 import { appendConversationEntry, type ConversationHistoryConfig } from '../utils/conversationHistory.js';
 import type { SemanticConversationMemory } from '../utils/semanticConversationMemory.js';
+import {
+  PlatformNotSupportedError,
+  WhitelistError,
+  type MessagingClient,
+  type MessageContext,
+} from './messagingPlatforms.js';
 
-export type MessagingClient = TelegramMessagingClient | SlackMessagingClient;
-export type MessageContext = TelegramMessageContext | SlackMessageContext;
+export type { MessagingClient, MessageContext } from './messagingPlatforms.js';
 
 export interface MessagingInitializerOptions {
   config: Config;
@@ -27,42 +30,69 @@ export interface MessagingInitializerOptions {
   onChatBound: (chatId: string) => void;
 }
 
+/**
+ * Messaging Platform Registry
+ * Add new platforms here to make them available
+ */
+const messagingPlatforms = {
+  telegram: {
+    createClient: (config: Config) => {
+      const TELEGRAM_WHITELIST = parseWhitelistFromEnv(config.TELEGRAM_WHITELIST);
+      if (TELEGRAM_WHITELIST.length === 0) {
+        throw new WhitelistError('Telegram');
+      }
+      return new TelegramMessagingClient({
+        token: config.TELEGRAM_TOKEN || '',
+        typingIntervalMs: config.TYPING_INTERVAL_MS,
+        maxMessageLength: config.MAX_RESPONSE_LENGTH,
+      });
+    },
+    getWhitelist: (config: Config) => parseWhitelistFromEnv(config.TELEGRAM_WHITELIST),
+    getHandler: registerTelegramHandlers,
+  },
+  slack: {
+    createClient: (config: Config) => {
+      const SLACK_WHITELIST = parseAllowlistFromEnv(config.SLACK_WHITELIST, 'SLACK_WHITELIST');
+      if (SLACK_WHITELIST.length === 0) {
+        throw new WhitelistError('Slack');
+      }
+      return new SlackMessagingClient({
+        token: config.SLACK_BOT_TOKEN || '',
+        signingSecret: config.SLACK_SIGNING_SECRET || '',
+        appToken: config.SLACK_APP_TOKEN,
+        typingIntervalMs: config.TYPING_INTERVAL_MS,
+        maxMessageLength: config.MAX_RESPONSE_LENGTH,
+      });
+    },
+    getWhitelist: (config: Config) => parseAllowlistFromEnv(config.SLACK_WHITELIST, 'SLACK_WHITELIST'),
+    getHandler: registerTelegramHandlers, // TODO: Add Slack-specific handler
+  },
+} as const;
+
+export type MessagingPlatform = keyof typeof messagingPlatforms;
+
 export class MessagingInitializer {
   private config: Config;
   private messagingClient: MessagingClient;
   private enqueueMessage: (messageContext: MessageContext) => Promise<void>;
   private getQueueLength: () => number;
+  private platform: MessagingPlatform;
 
   constructor(options: MessagingInitializerOptions) {
     this.config = options.config;
+    this.platform = this.config.MESSAGING_PLATFORM as MessagingPlatform;
 
-    const TELEGRAM_WHITELIST = parseWhitelistFromEnv(this.config.TELEGRAM_WHITELIST);
-    const SLACK_WHITELIST = parseAllowlistFromEnv(this.config.SLACK_WHITELIST, 'SLACK_WHITELIST');
-    if (this.config.MESSAGING_PLATFORM === 'telegram') {
-      if (TELEGRAM_WHITELIST.length === 0) {
-        logError('Error: TELEGRAM_WHITELIST is required in Telegram mode.');
-        process.exit(1);
-      }
-      this.messagingClient = new TelegramMessagingClient({
-        token: this.config.TELEGRAM_TOKEN || '',
-        typingIntervalMs: this.config.TYPING_INTERVAL_MS,
-        maxMessageLength: this.config.MAX_RESPONSE_LENGTH,
-      });
-    } else {
-      if (SLACK_WHITELIST.length === 0) {
-        logError('Error: SLACK_WHITELIST is required in Slack mode.');
-        process.exit(1);
-      }
-      this.messagingClient = new SlackMessagingClient({
-        token: this.config.SLACK_BOT_TOKEN || '',
-        signingSecret: this.config.SLACK_SIGNING_SECRET || '',
-        appToken: this.config.SLACK_APP_TOKEN,
-        typingIntervalMs: this.config.TYPING_INTERVAL_MS,
-        maxMessageLength: this.config.MAX_RESPONSE_LENGTH,
-      });
+    // Validate platform is supported
+    if (!messagingPlatforms[this.platform]) {
+      throw new PlatformNotSupportedError(this.platform);
     }
 
-    const ACTIVE_USER_WHITELIST = this.config.MESSAGING_PLATFORM === 'telegram' ? TELEGRAM_WHITELIST : SLACK_WHITELIST;
+    const platformConfig = messagingPlatforms[this.platform];
+
+    // Create the messaging client using the platform plugin
+    this.messagingClient = platformConfig.createClient(this.config);
+
+    const ACTIVE_USER_WHITELIST = platformConfig.getWhitelist(this.config);
 
     const { enqueueMessage, getQueueLength } = createMessageQueueProcessor({
       processSingleMessage: (messageContext, messageRequestId) => {
@@ -108,7 +138,8 @@ export class MessagingInitializer {
     this.enqueueMessage = enqueueMessage;
     this.getQueueLength = getQueueLength;
 
-    registerTelegramHandlers({
+    // Register platform-specific handlers
+    platformConfig.getHandler({
       messagingClient: this.messagingClient,
       telegramWhitelist: ACTIVE_USER_WHITELIST,
       enforceWhitelist: true,
@@ -143,6 +174,10 @@ export class MessagingInitializer {
     return this.getQueueLength();
   }
 
+  public getPlatform(): MessagingPlatform {
+    return this.platform;
+  }
+
   public async launch(): Promise<void> {
     await this.messagingClient.launch();
   }
@@ -150,4 +185,19 @@ export class MessagingInitializer {
   public stop(signal: string): void {
     this.messagingClient.stop(signal);
   }
+}
+
+/**
+ * Register a new messaging platform
+ * Use this to add Discord, WhatsApp, Signal, etc.
+ */
+export function registerMessagingPlatform(
+  name: string,
+  config: {
+    createClient: (config: Config) => MessagingClient;
+    getWhitelist: (config: Config) => string[];
+    getHandler: typeof registerTelegramHandlers;
+  },
+): void {
+  (messagingPlatforms as Record<string, typeof config>)[name] = config;
 }

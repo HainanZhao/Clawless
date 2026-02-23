@@ -18,12 +18,21 @@ export interface AgentManagerOptions {
 }
 
 export class AgentManager {
-  private cliAgent: BaseCliAgent;
-  private acpRuntime: AcpRuntime;
+  private cliAgent: BaseCliAgent | null = null;
+  private acpRuntime: AcpRuntime | null = null;
   private config: Config;
+  private agentInitialized = false;
+  private options: AgentManagerOptions;
 
   constructor(options: AgentManagerOptions) {
     this.config = options.config;
+    this.options = options;
+  }
+
+  private initializeAgent(): void {
+    if (this.agentInitialized) {
+      return;
+    }
 
     const agentCommand = this.getAgentCommand(this.config.CLI_AGENT);
 
@@ -58,7 +67,7 @@ export class AgentManager {
       acpPrewarmMaxRetries: this.config.ACP_PREWARM_MAX_RETRIES,
       acpMcpServersJson: this.config.ACP_MCP_SERVERS_JSON,
       stderrTailMaxChars: GEMINI_STDERR_TAIL_MAX,
-      buildPromptWithMemory: options.buildPromptWithMemory,
+      buildPromptWithMemory: this.options.buildPromptWithMemory,
       ensureMemoryFile: () => ensureMemoryFile(this.config.MEMORY_FILE_PATH, logInfo),
       buildPermissionResponse,
       noOpAcpFileOperation,
@@ -66,6 +75,8 @@ export class AgentManager {
       logInfo,
       logError,
     });
+
+    this.agentInitialized = true;
   }
 
   private getAgentCommand(cliAgent: string): string {
@@ -80,30 +91,42 @@ export class AgentManager {
   }
 
   public validateCliAgentOrExit(): void {
-    const validation = this.cliAgent.validate();
-    if (!validation.valid) {
-      logError(`Error: ${validation.error}`);
+    this.initializeAgent();
+    const validation = this.cliAgent?.validate();
+    if (!validation?.valid) {
+      logError(`Error: ${validation?.error || 'Agent validation failed'}`);
       process.exit(1);
     }
   }
 
   public getCliAgent(): BaseCliAgent {
-    return this.cliAgent;
+    this.initializeAgent();
+    return this.cliAgent as BaseCliAgent;
   }
 
   public getAcpRuntime(): AcpRuntime {
-    return this.acpRuntime;
+    this.initializeAgent();
+    return this.acpRuntime as AcpRuntime;
   }
 
   public scheduleAcpPrewarm(reason: string): void {
-    this.acpRuntime.scheduleAcpPrewarm(reason);
+    this.initializeAgent();
+    this.acpRuntime?.scheduleAcpPrewarm(reason);
   }
 
   public async shutdown(reason: string): Promise<void> {
-    await this.acpRuntime.shutdownAcpRuntime(reason);
+    if (this.acpRuntime) {
+      await this.acpRuntime.shutdownAcpRuntime(reason);
+    }
   }
 
   public requestManualAbort(): void {
-    this.acpRuntime.requestManualAbort();
+    if (this.acpRuntime) {
+      this.acpRuntime.requestManualAbort();
+    }
+  }
+
+  public isInitialized(): boolean {
+    return this.agentInitialized;
   }
 }

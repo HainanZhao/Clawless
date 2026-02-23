@@ -146,6 +146,12 @@ export class SemanticConversationMemory {
 
           CREATE INDEX IF NOT EXISTS idx_semantic_memory_chat_seq
             ON ${ENTRIES_TABLE_NAME}(chat_id, seq);
+
+          CREATE INDEX IF NOT EXISTS idx_semantic_memory_timestamp
+            ON ${ENTRIES_TABLE_NAME}(timestamp DESC);
+
+          CREATE INDEX IF NOT EXISTS idx_semantic_memory_chat_timestamp
+            ON ${ENTRIES_TABLE_NAME}(chat_id, timestamp DESC);
         `);
 
         this.persistDatabase(db);
