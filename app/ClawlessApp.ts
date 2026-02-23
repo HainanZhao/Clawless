@@ -1,25 +1,25 @@
 import path from 'node:path';
-import { logInfo, logError } from '../utils/error.js';
-import { getConfig, type Config } from '../utils/config.js';
-import { ensureClawlessHomeDirectory, resolveChatId, loadPersistedCallbackChatId } from '../utils/callbackState.js';
+import { type JobProgressEvent, runPromptWithCli } from '../acp/tempAcpRunner.js';
+import { ensureClawlessHomeDirectory, loadPersistedCallbackChatId, resolveChatId } from '../utils/callbackState.js';
+import { type Config, getConfig } from '../utils/config.js';
+import { appendToContextQueue, formatContextQueueForPrompt, loadAndClearContextQueue } from '../utils/contextQueue.js';
 import {
+  type ConversationHistoryConfig,
+  ensureConversationHistoryFile,
+  formatConversationHistoryForPrompt,
+  loadConversationHistory,
+} from '../utils/conversationHistory.js';
+import { getErrorMessage, logError, logInfo } from '../utils/error.js';
+import {
+  buildPromptWithMemory as buildPromptWithMemoryTemplate,
   ensureMemoryFile,
   readMemoryContext,
-  buildPromptWithMemory as buildPromptWithMemoryTemplate,
 } from '../utils/memory.js';
-import {
-  ensureConversationHistoryFile,
-  loadConversationHistory,
-  type ConversationHistoryConfig,
-  formatConversationHistoryForPrompt,
-} from '../utils/conversationHistory.js';
-import { loadAndClearContextQueue, formatContextQueueForPrompt, appendToContextQueue } from '../utils/contextQueue.js';
 import { SemanticConversationMemory } from '../utils/semanticConversationMemory.js';
-import { runPromptWithCli, type JobProgressEvent } from '../acp/tempAcpRunner.js';
 import { AgentManager } from './AgentManager.js';
+import { CallbackServerManager } from './CallbackServerManager.js';
 import { MessagingInitializer } from './MessagingInitializer.js';
 import { SchedulerManager } from './SchedulerManager.js';
-import { CallbackServerManager } from './CallbackServerManager.js';
 
 export class ClawlessApp {
   private config: Config;
@@ -68,8 +68,16 @@ export class ClawlessApp {
       resolveTargetChatId: () => resolveChatId(this.lastIncomingChatId),
       getEnqueueMessage: () => this.messagingInitializer?.getEnqueueMessage(),
       appendContextToAgent: async (text) => {
-        // Instead of trying to append to live agent session (which may be dead),
-        // save to context queue file. Will be loaded on next prompt.
+        if (this.agentManager.isAcpSessionReady()) {
+          try {
+            await this.agentManager.getAcpRuntime().appendContext(text);
+            return;
+          } catch (error) {
+            logInfo('Failed to append context to live ACP session, falling back to queue', {
+              error: getErrorMessage(error),
+            });
+          }
+        }
         appendToContextQueue(
           this.config.CLAWLESS_HOME,
           {
