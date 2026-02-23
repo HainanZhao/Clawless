@@ -57,18 +57,19 @@ export function createScheduledJobHandler(deps: ScheduledJobHandlerDeps) {
 
       // Build a progress callback that forwards status updates to the originating chat
       const progressChatId = schedule.type === 'async_conversation' ? schedule.metadata?.chatId : resolveTargetChatId();
-      let lastProgressStatus: string | null = null;
 
       const onProgress = progressChatId
         ? (event: JobProgressEvent) => {
-            // Skip duplicate running updates and completed (the final result message handles it)
-            if (event.status === 'running' && lastProgressStatus === 'running') return;
+            // Send all progress updates so user knows job is still running (not crashed)
+            // Skip only completed (final result message handles it)
             if (event.status === 'completed') return;
 
-            lastProgressStatus = event.status;
             logInfo('Job progress', { scheduleId: schedule.id, ...event });
 
             if (event.status === 'failed') {
+              void sendTextToChat(progressChatId, normalizeOutgoingText(`🔄 Job ${schedule.id}: ${event.message}`));
+            } else {
+              // Send running status updates so user knows it's still working
               void sendTextToChat(progressChatId, normalizeOutgoingText(`🔄 Job ${schedule.id}: ${event.message}`));
             }
           }

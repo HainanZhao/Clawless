@@ -102,7 +102,7 @@ export async function runPromptWithCli(options: TempAcpRunnerOptions): Promise<s
     cwd,
     timeoutMs,
     noOutputTimeoutMs,
-    progressIntervalMs = 60_000,
+    progressIntervalMs = 30_000,
     logInfo,
     logError,
     onProgress,
