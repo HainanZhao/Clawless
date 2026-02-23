@@ -1,16 +1,17 @@
 import os from 'node:os';
+import { buildPermissionResponse, noOpAcpFileOperation } from '../acp/clientHelpers.js';
+import { type AcpRuntime, createAcpRuntime } from '../acp/runtimeManager.js';
 import {
-  createCliAgent,
-  validateAgentType,
-  SUPPORTED_AGENTS,
   type AgentType,
   type BaseCliAgent,
+  createCliAgent,
+  SUPPORTED_AGENTS,
+  validateAgentType,
 } from '../core/agents/index.js';
-import { createAcpRuntime, type AcpRuntime } from '../acp/runtimeManager.js';
-import { buildPermissionResponse, noOpAcpFileOperation } from '../acp/clientHelpers.js';
-import { getErrorMessage, logInfo, logError } from '../utils/error.js';
-import { ensureMemoryFile } from '../utils/memory.js';
 import type { Config } from '../utils/config.js';
+import { getErrorMessage, logError, logInfo } from '../utils/error.js';
+import { AgentValidationError } from '../utils/errors.js';
+import { ensureMemoryFile } from '../utils/memory.js';
 
 export interface AgentManagerOptions {
   config: Config;
@@ -18,12 +19,21 @@ export interface AgentManagerOptions {
 }
 
 export class AgentManager {
-  private cliAgent: BaseCliAgent;
-  private acpRuntime: AcpRuntime;
+  private cliAgent: BaseCliAgent | null = null;
+  private acpRuntime: AcpRuntime | null = null;
   private config: Config;
+  private agentInitialized = false;
+  private options: AgentManagerOptions;
 
   constructor(options: AgentManagerOptions) {
     this.config = options.config;
+    this.options = options;
+  }
+
+  private initializeAgent(): void {
+    if (this.agentInitialized) {
+      return;
+    }
 
     const agentCommand = this.getAgentCommand(this.config.CLI_AGENT);
 
@@ -58,7 +68,7 @@ export class AgentManager {
       acpPrewarmMaxRetries: this.config.ACP_PREWARM_MAX_RETRIES,
       acpMcpServersJson: this.config.ACP_MCP_SERVERS_JSON,
       stderrTailMaxChars: GEMINI_STDERR_TAIL_MAX,
-      buildPromptWithMemory: options.buildPromptWithMemory,
+      buildPromptWithMemory: this.options.buildPromptWithMemory,
       ensureMemoryFile: () => ensureMemoryFile(this.config.MEMORY_FILE_PATH, logInfo),
       buildPermissionResponse,
       noOpAcpFileOperation,
@@ -66,6 +76,8 @@ export class AgentManager {
       logInfo,
       logError,
     });
+
+    this.agentInitialized = true;
   }
 
   private getAgentCommand(cliAgent: string): string {
@@ -80,30 +92,59 @@ export class AgentManager {
   }
 
   public validateCliAgentOrExit(): void {
+    this.initializeAgent();
+    if (!this.cliAgent) {
+      logError('Error: Agent failed to initialize');
+      process.exit(1);
+    }
     const validation = this.cliAgent.validate();
     if (!validation.valid) {
-      logError(`Error: ${validation.error}`);
+      logError(`Error: ${validation.error || 'Agent validation failed'}`);
       process.exit(1);
     }
   }
 
   public getCliAgent(): BaseCliAgent {
+    this.initializeAgent();
+    if (!this.cliAgent) {
+      throw new AgentValidationError('Agent not initialized');
+    }
     return this.cliAgent;
   }
 
   public getAcpRuntime(): AcpRuntime {
+    this.initializeAgent();
+    if (!this.acpRuntime) {
+      throw new AgentValidationError('ACP runtime not initialized');
+    }
     return this.acpRuntime;
   }
 
   public scheduleAcpPrewarm(reason: string): void {
-    this.acpRuntime.scheduleAcpPrewarm(reason);
+    this.initializeAgent();
+    this.acpRuntime?.scheduleAcpPrewarm(reason);
   }
 
   public async shutdown(reason: string): Promise<void> {
-    await this.acpRuntime.shutdownAcpRuntime(reason);
+    if (this.acpRuntime) {
+      await this.acpRuntime.shutdownAcpRuntime(reason);
+    }
   }
 
   public requestManualAbort(): void {
-    this.acpRuntime.requestManualAbort();
+    if (this.acpRuntime) {
+      this.acpRuntime.requestManualAbort();
+    }
+  }
+
+  public isInitialized(): boolean {
+    return this.agentInitialized;
+  }
+
+  public isAcpSessionReady(): boolean {
+    if (!this.acpRuntime) {
+      return false;
+    }
+    return this.acpRuntime.getRuntimeState().acpSessionReady;
   }
 }

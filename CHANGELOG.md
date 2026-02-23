@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.4.9] - 2026-02-23
+
+### Fixed
+
+- Removed duplicate `PlatformNotSupportedError` and `WhitelistError` definitions (consolidated into `utils/errors.ts`).
+- Added proper null checks in `AgentManager` with descriptive error throws instead of unsafe type casts.
+- Removed unused `lastChunkAt` variable from message processor.
+- Added trailing newline to `dependabot.yml` for linter compliance.
+- Renamed `registerTelegramHandlers` to `registerMessagingHandlers` to reflect platform-agnostic design (backward-compatible alias preserved).
+
+### Updates
+- **CI/CD Pipeline**: GitHub Actions workflow for lint, build, and test across Node.js 18/20/22, with automatic npm publishing on main branch pushes.
+- **Dependabot**: Automated dependency updates for npm packages and GitHub Actions.
+- **Error Hierarchy**: Centralized error handling with `ClawlessError` base class and specialized subclasses (`ConfigError`, `MessagingError`, `AgentError`, `SchedulerError`, `StorageError`, etc.) with HTTP status codes.
+- **Context Queue**: New mechanism for synchronizing async job results back to the main agent session via a persistent queue file.
+- **Platform Capabilities**: Interface for querying messaging platform features (markdown support, max message length, threading, etc.).
+- **Lazy Agent Initialization**: Agent and ACP runtime now initialize on first access instead of at startup, improving boot time.
+- **Platform Registry Pattern**: Messaging platforms (Telegram, Slack) now use a registry pattern for easy extensibility. Adding new platforms requires only registering a config object.
+- **Conversation History Performance**: Optimized rotation to only run when entries exceed threshold (1.2x max), avoiding O(N) overhead on every message.
+- **Config Timeout**: Increased `CLI_AGENT_NO_OUTPUT_TIMEOUT_MS` default from 5 minutes to 10 minutes.
+---
+
 ## [0.4.8] - 2026-02-22
 
 ### Added

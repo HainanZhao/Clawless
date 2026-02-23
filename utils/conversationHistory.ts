@@ -167,18 +167,26 @@ export function appendConversationEntry(
       'utf8',
     );
 
-    const rows = readConversationRows(filePath, logInfo);
-    let finalRows = rows;
-    if (maxEntries > 0 && rows.length > maxEntries) {
-      finalRows = rows.slice(-maxEntries);
-      writeConversationRows(filePath, finalRows);
+    // Only rotate when needed to avoid O(N) overhead on every message
+    try {
+      const stats = fs.statSync(filePath);
+      if (maxEntries > 0 && stats.size > 0) {
+        const rows = readConversationRows(filePath, logInfo);
+        if (rows.length > maxEntries * 1.2) {
+          const finalRows = rows.slice(-maxEntries);
+          writeConversationRows(filePath, finalRows);
+          logInfo('Conversation history rotated', {
+            filePath,
+            totalEntries: finalRows.length,
+          });
+        }
+      }
+    } catch (error: any) {
+      logInfo('Failed to rotate conversation history', {
+        error: getErrorMessage(error),
+        filePath,
+      });
     }
-
-    logInfo('Conversation entry appended', {
-      chatId: entry.chatId,
-      platform: entry.platform,
-      totalEntries: finalRows.length,
-    });
 
     return newEntry;
   } catch (error: any) {
@@ -192,7 +200,9 @@ export function appendConversationEntry(
 }
 
 /**
- * Load conversation entries from history store
+ * Load ALL conversation entries from history store (no filtering, no limit).
+ * Returns entries in chronological order as they appear in the file.
+ * Use this when you need the full history for operations like warming semantic memory.
  */
 export function loadConversationHistory(config: ConversationHistoryConfig): ConversationEntry[] {
   const { filePath, logInfo } = config;
@@ -210,7 +220,13 @@ export function loadConversationHistory(config: ConversationHistoryConfig): Conv
 }
 
 /**
- * Get relevant conversation history for a specific chat
+ * Load conversation history filtered by a specific chat ID and limited to recent entries.
+ * This is a convenience wrapper around loadConversationHistory that:
+ * 1. Loads ALL entries from the file
+ * 2. Filters to only entries matching the given chatId
+ * 3. Returns only the most recent `maxEntries` (default: 10)
+ *
+ * Use this when you need context-specific history for a particular chat session.
  */
 export function getRelevantHistory(
   config: ConversationHistoryConfig,
@@ -249,7 +265,9 @@ export function formatConversationHistoryForPrompt(entries: ConversationEntry[],
   const lines: string[] = [];
   let totalChars = 0;
 
-  for (const entry of entries) {
+  // Prioritize newest entries by iterating backwards
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
     const timestamp = new Date(entry.timestamp).toLocaleString();
     const entryText = [`[${timestamp}]`, `User: ${entry.userMessage}`, `Assistant: ${entry.botResponse}`, ''].join(
       '\n',
@@ -259,7 +277,7 @@ export function formatConversationHistoryForPrompt(entries: ConversationEntry[],
       break;
     }
 
-    lines.push(entryText);
+    lines.unshift(entryText);
     totalChars += entryText.length;
   }
 

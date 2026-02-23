@@ -18,21 +18,19 @@ const ASYNC_PREFIX = '[MODE: ASYNC]';
  * If detected, returns the mode and the content with the prefix stripped.
  */
 export function detectConversationMode(text: string): ModeDetectionResult {
-  const trimmed = text.trim();
-
-  if (trimmed.startsWith(QUICK_PREFIX)) {
+  if (text.includes(QUICK_PREFIX)) {
     return {
       mode: ConversationMode.QUICK,
       isDetected: true,
-      content: text.replace(QUICK_PREFIX, '').trimStart(),
+      content: text.split(QUICK_PREFIX)[1].trimStart(),
     };
   }
 
-  if (trimmed.startsWith(ASYNC_PREFIX)) {
+  if (text.includes(ASYNC_PREFIX)) {
     return {
       mode: ConversationMode.ASYNC,
       isDetected: true,
-      content: text.replace(ASYNC_PREFIX, '').trimStart(),
+      content: text.split(ASYNC_PREFIX)[1].trimStart(),
     };
   }
 

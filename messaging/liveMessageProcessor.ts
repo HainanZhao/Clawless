@@ -1,6 +1,6 @@
 import { debounce } from 'lodash-es';
 import { generateShortId } from '../utils/commandText.js';
-import { detectConversationMode, wrapHybridPrompt, ConversationMode } from './ModeDetector.js';
+import { ConversationMode, detectConversationMode, wrapHybridPrompt } from './ModeDetector.js';
 import { smartTruncate } from './messageTruncator.js';
 
 type LogInfoFn = (message: string, details?: unknown) => void;
@@ -131,7 +131,6 @@ class LiveMessageManager {
     try {
       const text = textOverride || this.getPreviewText();
       await this.messageContext.finalizeLiveMessage(this.liveMessageId, text);
-      this.finalized = true;
       if (this.acpDebugStream) {
         this.logInfo('Finalized live message', {
           requestId: this.requestId,
@@ -143,6 +142,8 @@ class LiveMessageManager {
         requestId: this.requestId,
         error: this.getErrorMessage(error),
       });
+    } finally {
+      this.finalized = true;
     }
   }
 
@@ -170,7 +171,7 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
     messageRequestId,
     maxResponseLength,
     streamUpdateIntervalMs,
-    messageGapThresholdMs,
+    messageGapThresholdMs: _messageGapThresholdMs,
     acpDebugStream,
     runAcpPrompt,
     scheduleAsyncJob,
@@ -195,7 +196,6 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
     acpDebugStream,
   );
 
-  let lastChunkAt = 0;
   let promptCompleted = false;
   const modeDetected = !!messageContext.skipHybridMode;
   let conversationMode = modeDetected ? ConversationMode.QUICK : ConversationMode.UNKNOWN;
@@ -212,9 +212,6 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
       // If we already detected ASYNC mode, we suppress output (handled at end)
       if (conversationMode === ConversationMode.ASYNC) return;
 
-      const now = Date.now();
-      const gapSinceLastChunk = lastChunkAt > 0 ? now - lastChunkAt : 0;
-
       if (conversationMode === ConversationMode.UNKNOWN) {
         prefixBuffer += chunk;
         const result = detectConversationMode(prefixBuffer);
@@ -230,12 +227,6 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
         return;
       }
 
-      // Normal streaming for QUICK mode
-      if (gapSinceLastChunk > messageGapThresholdMs && liveMessage.isLive() && liveMessage.getBuffer().trim()) {
-        await liveMessage.finalize();
-      }
-
-      lastChunkAt = now;
       liveMessage.append(chunk);
     });
 
@@ -267,7 +258,7 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
         });
       });
 
-      const finalMsg = `${fullResponse} (Reference: ${jobRef})`;
+      const finalMsg = `${taskMessage} (Reference: ${jobRef})`;
       await messageContext.sendText(finalMsg);
       return;
     }
