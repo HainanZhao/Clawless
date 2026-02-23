@@ -129,4 +129,11 @@ export class AgentManager {
   public isInitialized(): boolean {
     return this.agentInitialized;
   }
+
+  public isAcpSessionReady(): boolean {
+    if (!this.acpRuntime) {
+      return false;
+    }
+    return this.acpRuntime.getRuntimeState().acpSessionReady;
+  }
 }

@@ -99,9 +99,10 @@ export class ClawlessApp {
   private async buildPromptWithMemory(userPrompt: string): Promise<string> {
     const memoryContext = readMemoryContext(this.config.MEMORY_FILE_PATH, this.config.MEMORY_MAX_CHARS, logInfo);
 
-    // Load recent conversation history for context
+    // Load recent conversation history only when there's no existing ACP session
+    // Agent keeps its own session memory, so we only need history on first prompt
     let conversationContext = '';
-    if (this.config.CONVERSATION_HISTORY_ENABLED) {
+    if (this.config.CONVERSATION_HISTORY_ENABLED && !this.agentManager.isAcpSessionReady()) {
       const conversationHistoryConfig: ConversationHistoryConfig = {
         filePath: this.config.CONVERSATION_HISTORY_FILE_PATH,
         maxEntries: this.config.CONVERSATION_HISTORY_MAX_ENTRIES,
