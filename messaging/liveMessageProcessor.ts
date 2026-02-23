@@ -1,6 +1,6 @@
 import { debounce } from 'lodash-es';
 import { generateShortId } from '../utils/commandText.js';
-import { detectConversationMode, wrapHybridPrompt, ConversationMode } from './ModeDetector.js';
+import { ConversationMode, detectConversationMode, wrapHybridPrompt } from './ModeDetector.js';
 import { smartTruncate } from './messageTruncator.js';
 
 type LogInfoFn = (message: string, details?: unknown) => void;
@@ -196,7 +196,6 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
     acpDebugStream,
   );
 
-  let lastChunkAt = 0;
   let promptCompleted = false;
   const modeDetected = !!messageContext.skipHybridMode;
   let conversationMode = modeDetected ? ConversationMode.QUICK : ConversationMode.UNKNOWN;
@@ -213,8 +212,6 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
       // If we already detected ASYNC mode, we suppress output (handled at end)
       if (conversationMode === ConversationMode.ASYNC) return;
 
-      const now = Date.now();
-
       if (conversationMode === ConversationMode.UNKNOWN) {
         prefixBuffer += chunk;
         const result = detectConversationMode(prefixBuffer);
@@ -230,7 +227,6 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
         return;
       }
 
-      lastChunkAt = now;
       liveMessage.append(chunk);
     });
 

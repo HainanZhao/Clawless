@@ -1,16 +1,17 @@
 import os from 'node:os';
+import { buildPermissionResponse, noOpAcpFileOperation } from '../acp/clientHelpers.js';
+import { type AcpRuntime, createAcpRuntime } from '../acp/runtimeManager.js';
 import {
-  createCliAgent,
-  validateAgentType,
-  SUPPORTED_AGENTS,
   type AgentType,
   type BaseCliAgent,
+  createCliAgent,
+  SUPPORTED_AGENTS,
+  validateAgentType,
 } from '../core/agents/index.js';
-import { createAcpRuntime, type AcpRuntime } from '../acp/runtimeManager.js';
-import { buildPermissionResponse, noOpAcpFileOperation } from '../acp/clientHelpers.js';
-import { getErrorMessage, logInfo, logError } from '../utils/error.js';
-import { ensureMemoryFile } from '../utils/memory.js';
 import type { Config } from '../utils/config.js';
+import { getErrorMessage, logError, logInfo } from '../utils/error.js';
+import { AgentValidationError } from '../utils/errors.js';
+import { ensureMemoryFile } from '../utils/memory.js';
 
 export interface AgentManagerOptions {
   config: Config;
@@ -92,21 +93,31 @@ export class AgentManager {
 
   public validateCliAgentOrExit(): void {
     this.initializeAgent();
-    const validation = this.cliAgent?.validate();
-    if (!validation?.valid) {
-      logError(`Error: ${validation?.error || 'Agent validation failed'}`);
+    if (!this.cliAgent) {
+      logError('Error: Agent failed to initialize');
+      process.exit(1);
+    }
+    const validation = this.cliAgent.validate();
+    if (!validation.valid) {
+      logError(`Error: ${validation.error || 'Agent validation failed'}`);
       process.exit(1);
     }
   }
 
   public getCliAgent(): BaseCliAgent {
     this.initializeAgent();
-    return this.cliAgent as BaseCliAgent;
+    if (!this.cliAgent) {
+      throw new AgentValidationError('Agent not initialized');
+    }
+    return this.cliAgent;
   }
 
   public getAcpRuntime(): AcpRuntime {
     this.initializeAgent();
-    return this.acpRuntime as AcpRuntime;
+    if (!this.acpRuntime) {
+      throw new AgentValidationError('ACP runtime not initialized');
+    }
+    return this.acpRuntime;
   }
 
   public scheduleAcpPrewarm(reason: string): void {

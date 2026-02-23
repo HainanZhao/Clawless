@@ -3,31 +3,14 @@
  * Used by MessagingInitializer and platform implementations
  */
 
-import type { TelegramMessagingClient } from '../messaging/telegramClient.js';
-import type { TelegramMessageContext } from '../messaging/telegramClient.js';
-import type { SlackMessagingClient } from '../messaging/slackClient.js';
-import type { SlackMessageContext } from '../messaging/slackClient.js';
-import { ClawlessError } from '../utils/errors.js';
+import type { SlackMessageContext, SlackMessagingClient } from '../messaging/slackClient.js';
+import type { TelegramMessageContext, TelegramMessagingClient } from '../messaging/telegramClient.js';
 
 export type MessagingClient = TelegramMessagingClient | SlackMessagingClient;
 export type MessageContext = TelegramMessageContext | SlackMessageContext;
 
-// Re-export errors for convenience
-export { ClawlessError } from '../utils/errors.js';
-
-export class PlatformNotSupportedError extends ClawlessError {
-  constructor(platform: string) {
-    super(`Messaging platform '${platform}' is not supported`, 'UNSUPPORTED_PLATFORM', 400, { platform });
-    this.name = 'PlatformNotSupportedError';
-  }
-}
-
-export class WhitelistError extends ClawlessError {
-  constructor(platform: string) {
-    super(`${platform} whitelist is required but not configured`, 'MISSING_WHITELIST', 500, { platform });
-    this.name = 'WhitelistError';
-  }
-}
+// Re-export errors from centralized error module
+export { ClawlessError, PlatformNotSupportedError, WhitelistError } from '../utils/errors.js';
 
 // Platform capability interface for future extensibility
 export interface MessagingPlatformCapabilities {

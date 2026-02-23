@@ -1,25 +1,25 @@
 import path from 'node:path';
-import { TelegramMessagingClient } from '../messaging/telegramClient.js';
-import { SlackMessagingClient } from '../messaging/slackClient.js';
+import type { AcpRuntime } from '../acp/runtimeManager.js';
 import { processSingleTelegramMessage } from '../messaging/liveMessageProcessor.js';
 import { createMessageQueueProcessor } from '../messaging/messageQueue.js';
-import { registerTelegramHandlers } from '../messaging/registerTelegramHandlers.js';
-import { parseAllowlistFromEnv, parseWhitelistFromEnv } from '../utils/telegramWhitelist.js';
-import { getErrorMessage, logInfo, logError, logWarn } from '../utils/error.js';
-import { persistCallbackChatId, ensureClawlessHomeDirectory } from '../utils/callbackState.js';
-import type { Config } from '../utils/config.js';
-import type { AcpRuntime } from '../acp/runtimeManager.js';
+import { registerMessagingHandlers } from '../messaging/registerTelegramHandlers.js';
+import { SlackMessagingClient } from '../messaging/slackClient.js';
+import { TelegramMessagingClient } from '../messaging/telegramClient.js';
 import type { CronScheduler } from '../scheduler/cronScheduler.js';
+import { ensureClawlessHomeDirectory, persistCallbackChatId } from '../utils/callbackState.js';
+import type { Config } from '../utils/config.js';
 import { appendConversationEntry, type ConversationHistoryConfig } from '../utils/conversationHistory.js';
+import { getErrorMessage, logError, logInfo, logWarn } from '../utils/error.js';
 import type { SemanticConversationMemory } from '../utils/semanticConversationMemory.js';
+import { parseAllowlistFromEnv, parseWhitelistFromEnv } from '../utils/telegramWhitelist.js';
 import {
+  type MessageContext,
+  type MessagingClient,
   PlatformNotSupportedError,
   WhitelistError,
-  type MessagingClient,
-  type MessageContext,
 } from './messagingPlatforms.js';
 
-export type { MessagingClient, MessageContext } from './messagingPlatforms.js';
+export type { MessageContext, MessagingClient } from './messagingPlatforms.js';
 
 export interface MessagingInitializerOptions {
   config: Config;
@@ -48,7 +48,7 @@ const messagingPlatforms = {
       });
     },
     getWhitelist: (config: Config) => parseWhitelistFromEnv(config.TELEGRAM_WHITELIST),
-    getHandler: registerTelegramHandlers,
+    getHandler: registerMessagingHandlers,
   },
   slack: {
     createClient: (config: Config) => {
@@ -65,7 +65,7 @@ const messagingPlatforms = {
       });
     },
     getWhitelist: (config: Config) => parseAllowlistFromEnv(config.SLACK_WHITELIST, 'SLACK_WHITELIST'),
-    getHandler: registerTelegramHandlers, // TODO: Add Slack-specific handler
+    getHandler: registerMessagingHandlers,
   },
 } as const;
 
@@ -196,7 +196,7 @@ export function registerMessagingPlatform(
   config: {
     createClient: (config: Config) => MessagingClient;
     getWhitelist: (config: Config) => string[];
-    getHandler: typeof registerTelegramHandlers;
+    getHandler: typeof registerMessagingHandlers;
   },
 ): void {
   (messagingPlatforms as Record<string, typeof config>)[name] = config;
