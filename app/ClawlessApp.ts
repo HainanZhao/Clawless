@@ -13,6 +13,7 @@ import {
   type ConversationHistoryConfig,
   formatConversationHistoryForPrompt,
 } from '../utils/conversationHistory.js';
+import { loadAndClearContextQueue, formatContextQueueForPrompt, appendToContextQueue } from '../utils/contextQueue.js';
 import { SemanticConversationMemory } from '../utils/semanticConversationMemory.js';
 import { runPromptWithCli, type JobProgressEvent } from '../acp/tempAcpRunner.js';
 import { AgentManager } from './AgentManager.js';
@@ -67,12 +68,18 @@ export class ClawlessApp {
       resolveTargetChatId: () => resolveChatId(this.lastIncomingChatId),
       getEnqueueMessage: () => this.messagingInitializer?.getEnqueueMessage(),
       appendContextToAgent: async (text) => {
-        const acpRuntime = this.agentManager.getAcpRuntime();
-        if (acpRuntime && typeof acpRuntime.appendContext === 'function') {
-          await acpRuntime.appendContext(text);
-        } else {
-          logInfo('Warning: acpRuntime.appendContext not available in SchedulerManager');
-        }
+        // Instead of trying to append to live agent session (which may be dead),
+        // save to context queue file. Will be loaded on next prompt.
+        appendToContextQueue(
+          this.config.CLAWLESS_HOME,
+          {
+            id: Date.now().toString(),
+            timestamp: new Date().toISOString(),
+            source: 'async_job',
+            content: text,
+          },
+          logInfo,
+        );
       },
     });
 
@@ -99,22 +106,30 @@ export class ClawlessApp {
   private async buildPromptWithMemory(userPrompt: string): Promise<string> {
     const memoryContext = readMemoryContext(this.config.MEMORY_FILE_PATH, this.config.MEMORY_MAX_CHARS, logInfo);
 
-    // Load recent conversation history only when there's no existing ACP session
+    // Load recent conversation history and context queue only when there's no existing ACP session
     // Agent keeps its own session memory, so we only need history on first prompt
     let conversationContext = '';
-    if (this.config.CONVERSATION_HISTORY_ENABLED && !this.agentManager.isAcpSessionReady()) {
-      const conversationHistoryConfig: ConversationHistoryConfig = {
-        filePath: this.config.CONVERSATION_HISTORY_FILE_PATH,
-        maxEntries: this.config.CONVERSATION_HISTORY_MAX_ENTRIES,
-        maxCharsPerEntry: this.config.CONVERSATION_HISTORY_MAX_CHARS_PER_ENTRY,
-        maxTotalChars: this.config.CONVERSATION_HISTORY_MAX_TOTAL_CHARS,
-        logInfo,
-      };
-      const recentHistory = loadConversationHistory(conversationHistoryConfig);
-      conversationContext = formatConversationHistoryForPrompt(
-        recentHistory.slice(-10), // Last 10 conversations
-        this.config.CONVERSATION_HISTORY_MAX_TOTAL_CHARS,
-      );
+    let contextQueueContent = '';
+
+    if (!this.agentManager.isAcpSessionReady()) {
+      // Load context queue from async jobs (and clear it after loading)
+      contextQueueContent = formatContextQueueForPrompt(loadAndClearContextQueue(this.config.CLAWLESS_HOME, logInfo));
+
+      // Load recent conversation history
+      if (this.config.CONVERSATION_HISTORY_ENABLED) {
+        const conversationHistoryConfig: ConversationHistoryConfig = {
+          filePath: this.config.CONVERSATION_HISTORY_FILE_PATH,
+          maxEntries: this.config.CONVERSATION_HISTORY_MAX_ENTRIES,
+          maxCharsPerEntry: this.config.CONVERSATION_HISTORY_MAX_CHARS_PER_ENTRY,
+          maxTotalChars: this.config.CONVERSATION_HISTORY_MAX_TOTAL_CHARS,
+          logInfo,
+        };
+        const recentHistory = loadConversationHistory(conversationHistoryConfig);
+        conversationContext = formatConversationHistoryForPrompt(
+          recentHistory.slice(-10), // Last 10 conversations
+          this.config.CONVERSATION_HISTORY_MAX_TOTAL_CHARS,
+        );
+      }
     }
 
     return buildPromptWithMemoryTemplate({
@@ -126,6 +141,7 @@ export class ClawlessApp {
       callbackAuthToken: this.config.CALLBACK_AUTH_TOKEN,
       memoryContext,
       conversationContext,
+      contextQueueContent,
       messagingPlatform: this.config.MESSAGING_PLATFORM,
     });
   }
