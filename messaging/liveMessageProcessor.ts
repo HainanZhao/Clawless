@@ -267,7 +267,7 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
         });
       });
 
-      const finalMsg = `${fullResponse} (Reference: ${jobRef})`;
+      const finalMsg = `${taskMessage} (Reference: ${jobRef})`;
       await messageContext.sendText(finalMsg);
       return;
     }
