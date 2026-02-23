@@ -52,6 +52,7 @@ export function buildPromptWithMemory(params: {
   callbackChatStateFilePath: string;
   callbackAuthToken: string;
   memoryContext: string;
+  conversationContext?: string;
   messagingPlatform: string;
   includeSchedulerApi?: boolean;
 }) {
@@ -63,6 +64,7 @@ export function buildPromptWithMemory(params: {
     callbackChatStateFilePath,
     callbackAuthToken,
     memoryContext,
+    conversationContext = '',
     messagingPlatform,
     includeSchedulerApi = true,
   } = params;
@@ -113,6 +115,10 @@ export function buildPromptWithMemory(params: {
 
   if (memoryContext && memoryContext.trim().length > 0) {
     parts.push('', 'Current memory context:', memoryContext);
+  }
+
+  if (conversationContext && conversationContext.trim().length > 0) {
+    parts.push('', 'Recent conversation history:', conversationContext);
   }
 
   parts.push('', 'User message:', userPrompt);

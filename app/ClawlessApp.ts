@@ -11,6 +11,7 @@ import {
   ensureConversationHistoryFile,
   loadConversationHistory,
   type ConversationHistoryConfig,
+  formatConversationHistoryForPrompt,
 } from '../utils/conversationHistory.js';
 import { SemanticConversationMemory } from '../utils/semanticConversationMemory.js';
 import { runPromptWithCli, type JobProgressEvent } from '../acp/tempAcpRunner.js';
@@ -98,6 +99,23 @@ export class ClawlessApp {
   private async buildPromptWithMemory(userPrompt: string): Promise<string> {
     const memoryContext = readMemoryContext(this.config.MEMORY_FILE_PATH, this.config.MEMORY_MAX_CHARS, logInfo);
 
+    // Load recent conversation history for context
+    let conversationContext = '';
+    if (this.config.CONVERSATION_HISTORY_ENABLED) {
+      const conversationHistoryConfig: ConversationHistoryConfig = {
+        filePath: this.config.CONVERSATION_HISTORY_FILE_PATH,
+        maxEntries: this.config.CONVERSATION_HISTORY_MAX_ENTRIES,
+        maxCharsPerEntry: this.config.CONVERSATION_HISTORY_MAX_CHARS_PER_ENTRY,
+        maxTotalChars: this.config.CONVERSATION_HISTORY_MAX_TOTAL_CHARS,
+        logInfo,
+      };
+      const recentHistory = loadConversationHistory(conversationHistoryConfig);
+      conversationContext = formatConversationHistoryForPrompt(
+        recentHistory.slice(-10), // Last 10 conversations
+        this.config.CONVERSATION_HISTORY_MAX_TOTAL_CHARS,
+      );
+    }
+
     return buildPromptWithMemoryTemplate({
       userPrompt,
       memoryFilePath: this.config.MEMORY_FILE_PATH,
@@ -106,6 +124,7 @@ export class ClawlessApp {
       callbackChatStateFilePath: this.callbackChatStateFilePath,
       callbackAuthToken: this.config.CALLBACK_AUTH_TOKEN,
       memoryContext,
+      conversationContext,
       messagingPlatform: this.config.MESSAGING_PLATFORM,
     });
   }
