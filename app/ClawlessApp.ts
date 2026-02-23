@@ -134,7 +134,7 @@ export class ClawlessApp {
         };
         const recentHistory = loadConversationHistory(conversationHistoryConfig);
         conversationContext = formatConversationHistoryForPrompt(
-          recentHistory.slice(-10), // Last 10 conversations
+          recentHistory.slice(-5), // Last 5 conversations
           this.config.CONVERSATION_HISTORY_MAX_TOTAL_CHARS,
         );
       }
