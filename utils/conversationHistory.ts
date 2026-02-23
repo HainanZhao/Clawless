@@ -200,7 +200,9 @@ export function appendConversationEntry(
 }
 
 /**
- * Load conversation entries from history store
+ * Load ALL conversation entries from history store (no filtering, no limit).
+ * Returns entries in chronological order as they appear in the file.
+ * Use this when you need the full history for operations like warming semantic memory.
  */
 export function loadConversationHistory(config: ConversationHistoryConfig): ConversationEntry[] {
   const { filePath, logInfo } = config;
@@ -218,7 +220,13 @@ export function loadConversationHistory(config: ConversationHistoryConfig): Conv
 }
 
 /**
- * Get relevant conversation history for a specific chat
+ * Load conversation history filtered by a specific chat ID and limited to recent entries.
+ * This is a convenience wrapper around loadConversationHistory that:
+ * 1. Loads ALL entries from the file
+ * 2. Filters to only entries matching the given chatId
+ * 3. Returns only the most recent `maxEntries` (default: 10)
+ *
+ * Use this when you need context-specific history for a particular chat session.
  */
 export function getRelevantHistory(
   config: ConversationHistoryConfig,
