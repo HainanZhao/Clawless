@@ -1,5 +1,8 @@
 # Clawless — Bring Your Own Agent (Interface + ACP)
 
+[![npm version](https://img.shields.io/npm/v/clawless.svg)](https://www.npmjs.com/package/clawless)
+[![License](https://img.shields.io/github/license/HainanZhao/clawless.svg)](LICENSE)
+
 <img src="doc/Clawless.jpg" alt="Clawless" width="300" height="300" />
 
 Clawless is a lightweight bridge that connects your favorite local AI agent CLI to Telegram or Slack. Keep your tools, swap runtimes, avoid lock-in.
