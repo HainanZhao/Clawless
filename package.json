@@ -63,7 +63,7 @@
     "@types/node-cron": "^3.0.11",
     "tsx": "^4.21.0",
     "typescript": "^5.9.2",
-    "vitest": "^1.6.1"
+    "vitest": "^4.0.18"
   },
   "engines": {
     "node": ">=18.0.0"
