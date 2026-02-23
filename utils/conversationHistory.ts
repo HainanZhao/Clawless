@@ -167,18 +167,26 @@ export function appendConversationEntry(
       'utf8',
     );
 
-    const rows = readConversationRows(filePath, logInfo);
-    let finalRows = rows;
-    if (maxEntries > 0 && rows.length > maxEntries) {
-      finalRows = rows.slice(-maxEntries);
-      writeConversationRows(filePath, finalRows);
+    // Only rotate when needed to avoid O(N) overhead on every message
+    try {
+      const stats = fs.statSync(filePath);
+      if (maxEntries > 0 && stats.size > 0) {
+        const rows = readConversationRows(filePath, logInfo);
+        if (rows.length > maxEntries * 1.2) {
+          const finalRows = rows.slice(-maxEntries);
+          writeConversationRows(filePath, finalRows);
+          logInfo('Conversation history rotated', {
+            filePath,
+            totalEntries: finalRows.length,
+          });
+        }
+      }
+    } catch (error: any) {
+      logInfo('Failed to rotate conversation history', {
+        error: getErrorMessage(error),
+        filePath,
+      });
     }
-
-    logInfo('Conversation entry appended', {
-      chatId: entry.chatId,
-      platform: entry.platform,
-      totalEntries: finalRows.length,
-    });
 
     return newEntry;
   } catch (error: any) {
@@ -249,7 +257,9 @@ export function formatConversationHistoryForPrompt(entries: ConversationEntry[],
   const lines: string[] = [];
   let totalChars = 0;
 
-  for (const entry of entries) {
+  // Prioritize newest entries by iterating backwards
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
     const timestamp = new Date(entry.timestamp).toLocaleString();
     const entryText = [`[${timestamp}]`, `User: ${entry.userMessage}`, `Assistant: ${entry.botResponse}`, ''].join(
       '\n',
@@ -259,7 +269,7 @@ export function formatConversationHistoryForPrompt(entries: ConversationEntry[],
       break;
     }
 
-    lines.push(entryText);
+    lines.unshift(entryText);
     totalChars += entryText.length;
   }
 

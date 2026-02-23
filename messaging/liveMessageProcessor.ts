@@ -131,7 +131,6 @@ class LiveMessageManager {
     try {
       const text = textOverride || this.getPreviewText();
       await this.messageContext.finalizeLiveMessage(this.liveMessageId, text);
-      this.finalized = true;
       if (this.acpDebugStream) {
         this.logInfo('Finalized live message', {
           requestId: this.requestId,
@@ -143,6 +142,8 @@ class LiveMessageManager {
         requestId: this.requestId,
         error: this.getErrorMessage(error),
       });
+    } finally {
+      this.finalized = true;
     }
   }
 
@@ -170,7 +171,7 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
     messageRequestId,
     maxResponseLength,
     streamUpdateIntervalMs,
-    messageGapThresholdMs,
+    messageGapThresholdMs: _messageGapThresholdMs,
     acpDebugStream,
     runAcpPrompt,
     scheduleAsyncJob,
@@ -213,7 +214,6 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
       if (conversationMode === ConversationMode.ASYNC) return;
 
       const now = Date.now();
-      const gapSinceLastChunk = lastChunkAt > 0 ? now - lastChunkAt : 0;
 
       if (conversationMode === ConversationMode.UNKNOWN) {
         prefixBuffer += chunk;
@@ -228,11 +228,6 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
           }
         }
         return;
-      }
-
-      // Normal streaming for QUICK mode
-      if (gapSinceLastChunk > messageGapThresholdMs && liveMessage.isLive() && liveMessage.getBuffer().trim()) {
-        await liveMessage.finalize();
       }
 
       lastChunkAt = now;

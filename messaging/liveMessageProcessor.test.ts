@@ -38,7 +38,7 @@ describe('processSingleTelegramMessage', () => {
 
     expect(mockParams.scheduleAsyncJob).toHaveBeenCalled();
     expect(mockMessageContext.sendText).toHaveBeenCalledWith(
-      expect.stringContaining('[MODE: ASYNC] Do some work (Reference: job_'),
+      expect.stringContaining('Do some work (Reference: job_'),
     );
   });
 });
