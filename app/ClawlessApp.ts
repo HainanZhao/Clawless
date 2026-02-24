@@ -95,6 +95,7 @@ export class ClawlessApp {
       config: this.config,
       acpRuntime: this.agentManager.getAcpRuntime(),
       cronScheduler: this.schedulerManager.getCronScheduler(),
+      agentManager: this.agentManager,
       semanticConversationMemory: this.semanticConversationMemory,
       conversationHistoryConfig,
       onChatBound: (chatId) => {

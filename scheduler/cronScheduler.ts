@@ -432,6 +432,20 @@ export class CronScheduler {
   }
 
   /**
+   * Cancel all running jobs
+   */
+  async cancelAllJobs(): Promise<void> {
+    for (const [, job] of this.jobs) {
+      if (job.task && job.inFlight) {
+        job.task.stop();
+      }
+      if (job.timeout) {
+        clearTimeout(job.timeout);
+      }
+    }
+  }
+
+  /**
    * Shutdown all scheduled jobs
    */
   shutdown(): void {

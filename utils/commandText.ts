@@ -20,6 +20,61 @@ export function isAbortCommand(text: unknown) {
   return compact === 'please abort' || compact === 'please cancel' || compact === 'please stop';
 }
 
+export function isAbortAllCommand(text: unknown) {
+  const normalized = normalizeCommandText(text);
+  if (!normalized) {
+    return false;
+  }
+
+  const commands = new Set([
+    'abort all',
+    'cancel all',
+    'stop all',
+    '/abortall',
+    '/cancelall',
+    '/stopall',
+    'abort all jobs',
+    'abort async',
+    '/abort async',
+  ]);
+  if (commands.has(normalized)) {
+    return true;
+  }
+
+  const compact = normalized.replace(/\s+/g, ' ');
+  return compact.includes('abort all') || compact.includes('cancel all') || compact.includes('stop all');
+}
+
+export function isShutdownCommand(text: unknown) {
+  const normalized = normalizeCommandText(text);
+  if (!normalized) {
+    return false;
+  }
+
+  const commands = new Set(['shutdown', '/shutdown', 'shutdown agent', 'kill agent']);
+  if (commands.has(normalized)) {
+    return true;
+  }
+
+  const compact = normalized.replace(/\s+/g, ' ');
+  return compact === 'shutdown' || compact === 'please shutdown' || compact === 'shutdown the agent';
+}
+
+export function isNukeCommand(text: unknown) {
+  const normalized = normalizeCommandText(text);
+  if (!normalized) {
+    return false;
+  }
+
+  const commands = new Set(['nuke', '/nuke', 'nuke all', 'kill all', 'shutdown all', '/killall']);
+  if (commands.has(normalized)) {
+    return true;
+  }
+
+  const compact = normalized.replace(/\s+/g, ' ');
+  return compact === 'nuke' || compact === 'nuke everything' || compact === 'shutdown everything';
+}
+
 export function normalizeOutgoingText(text: unknown) {
   const rawText = String(text || '').trim();
   return stripThinkingProcess(rawText);

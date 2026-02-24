@@ -25,6 +25,7 @@ export interface MessagingInitializerOptions {
   config: Config;
   acpRuntime: AcpRuntime;
   cronScheduler: CronScheduler;
+  agentManager: any;
   semanticConversationMemory: SemanticConversationMemory;
   conversationHistoryConfig: ConversationHistoryConfig;
   onChatBound: (chatId: string) => void;
@@ -145,6 +146,14 @@ export class MessagingInitializer {
       enforceWhitelist: true,
       hasActiveAcpPrompt: options.acpRuntime.hasActiveAcpPrompt,
       cancelActiveAcpPrompt: options.acpRuntime.cancelActiveAcpPrompt,
+      cancelAllJobs: options.cronScheduler.cancelAllJobs,
+      shutdownAgent: async () => {
+        await options.agentManager.shutdown('Shutdown requested via command');
+      },
+      shutdownRuntime: async () => {
+        // This will exit the process
+        process.exit(0);
+      },
       enqueueMessage: this.enqueueMessage,
       onAbortRequested: options.acpRuntime.requestManualAbort,
       onChatBound: (chatId) => {

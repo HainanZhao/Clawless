@@ -28,7 +28,7 @@ const configSchema = z.object({
   CLI_AGENT_APPROVAL_MODE: z.string().default('default'),
   CLI_AGENT_MODEL: z.string().default(''),
   CLI_AGENT_TIMEOUT_MS: z.coerce.number().default(1200000),
-  CLI_AGENT_NO_OUTPUT_TIMEOUT_MS: z.coerce.number().default(600000),
+  CLI_AGENT_NO_OUTPUT_TIMEOUT_MS: z.coerce.number().default(900000),
   CLI_AGENT_KILL_GRACE_MS: z.coerce.number().default(5000),
   ACP_PERMISSION_STRATEGY: z.string().default('allow_once'),
   ACP_PREWARM_RETRY_MS: z.coerce.number().default(30000),
