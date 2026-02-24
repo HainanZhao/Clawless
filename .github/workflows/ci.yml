@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
 
 jobs:
   lint-build-test:
@@ -42,8 +43,8 @@ jobs:
 
   release:
     needs: lint-build-test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    if: false  # Disabled - manually trigger via workflow_dispatch
 
     steps:
       - name: Checkout code
