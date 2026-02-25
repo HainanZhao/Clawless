@@ -20,103 +20,71 @@ type ProcessSingleMessageParams = {
 };
 
 /**
- * Manages the lifecycle of a "live" streaming message on the chat platform.
+ * Manages streaming message output by sending chunks periodically.
+ * Tracks what has been sent to avoid duplicate content.
  */
-class LiveMessageManager {
-  private liveMessageId: string | number | undefined;
-  private previewBuffer = '';
-  private lastFlushAt = 0;
+class StreamingMessageSender {
+  private sentLength = 0;
+  private buffer = '';
   private finalized = false;
-  private startingLiveMessage: Promise<void> | null = null;
   private debouncedFlush: ReturnType<typeof debounce>;
 
   constructor(
     private readonly messageContext: any,
     private readonly requestId: number,
     private readonly maxResponseLength: number,
-    private readonly streamUpdateIntervalMs: number,
+    streamUpdateIntervalMs: number,
     private readonly logInfo: LogInfoFn,
     private readonly getErrorMessage: (error: unknown) => string,
     private readonly acpDebugStream: boolean,
   ) {
     this.debouncedFlush = debounce(
       async () => {
-        await this.flushPreview(true);
+        await this.sendNewContent();
       },
-      this.streamUpdateIntervalMs,
+      streamUpdateIntervalMs,
       { leading: false, trailing: true },
     );
   }
 
   append(chunk: string) {
-    this.previewBuffer += chunk;
+    this.buffer += chunk;
     void this.debouncedFlush();
   }
 
   getBuffer() {
-    return this.previewBuffer;
+    return this.buffer;
   }
 
   setBuffer(text: string) {
-    this.previewBuffer = text;
+    this.buffer = text;
   }
 
-  private getPreviewText() {
-    return smartTruncate(this.previewBuffer, { maxLength: this.maxResponseLength });
+  private getTruncatedBuffer() {
+    return smartTruncate(this.buffer, { maxLength: this.maxResponseLength });
   }
 
-  async flushPreview(force = false, allowStart = true) {
+  private async sendNewContent() {
     if (this.finalized) return;
 
-    const now = Date.now();
-    if (!force && now - this.lastFlushAt < this.streamUpdateIntervalMs) {
-      return;
-    }
-
-    this.lastFlushAt = now;
-    const text = this.getPreviewText();
-    if (!text) return;
-
-    if (!this.liveMessageId) {
-      if (!allowStart) return;
-
-      if (this.startingLiveMessage) {
-        await this.startingLiveMessage;
-      } else {
-        this.startingLiveMessage = (async () => {
-          try {
-            this.liveMessageId = await this.messageContext.startLiveMessage(text || '…');
-          } catch (_) {
-            this.liveMessageId = undefined;
-          }
-        })();
-
-        try {
-          await this.startingLiveMessage;
-        } finally {
-          this.startingLiveMessage = null;
-        }
-      }
-    }
-
-    if (!this.liveMessageId) return;
+    const text = this.getTruncatedBuffer();
+    const newContent = text.slice(this.sentLength).trim();
+    if (!newContent) return;
 
     try {
-      await this.messageContext.updateLiveMessage(this.liveMessageId, text);
+      await this.messageContext.sendText(newContent);
+      this.sentLength = text.length;
       if (this.acpDebugStream) {
-        this.logInfo('Live preview updated', {
+        this.logInfo('Stream chunk sent', {
           requestId: this.requestId,
-          previewLength: text.length,
+          chunkLength: newContent.length,
         });
       }
     } catch (error: any) {
-      const errorMessage = this.getErrorMessage(error).toLowerCase();
-      if (!errorMessage.includes('message is not modified')) {
-        this.logInfo('Live preview update skipped', {
-          requestId: this.requestId,
-          error: this.getErrorMessage(error),
-        });
-      }
+      this.logInfo('Failed to send stream chunk', {
+        requestId: this.requestId,
+        error: this.getErrorMessage(error),
+      });
     }
   }
 
@@ -124,44 +92,20 @@ class LiveMessageManager {
     if (this.finalized) return;
 
     this.debouncedFlush.cancel();
-    await this.flushPreview(true, false);
-
-    if (!this.liveMessageId) return;
-
-    try {
-      const text = textOverride || this.getPreviewText();
-      await this.messageContext.finalizeLiveMessage(this.liveMessageId, text);
-      if (this.acpDebugStream) {
-        this.logInfo('Finalized live message', {
-          requestId: this.requestId,
-          messageLength: text.length,
-        });
-      }
-    } catch (error: any) {
-      this.logInfo('Failed to finalize live message', {
-        requestId: this.requestId,
-        error: this.getErrorMessage(error),
-      });
-    } finally {
-      this.finalized = true;
+    if (textOverride) {
+      this.buffer = textOverride;
     }
+
+    await this.sendNewContent();
+    this.finalized = true;
   }
 
-  async cleanup(success: boolean) {
+  cancel() {
     this.debouncedFlush.cancel();
-    if (this.liveMessageId && !this.finalized && !success) {
-      try {
-        await this.messageContext.removeMessage(this.liveMessageId);
-      } catch (_) {}
-    }
   }
 
-  isLive() {
-    return !!this.liveMessageId;
-  }
-
-  isFinalized() {
-    return this.finalized;
+  hasSentContent() {
+    return this.sentLength > 0;
   }
 }
 
@@ -188,7 +132,7 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
   });
 
   const stopTypingIndicator = messageContext.startTyping();
-  const liveMessage = new LiveMessageManager(
+  const streamSender = new StreamingMessageSender(
     messageContext,
     messageRequestId,
     maxResponseLength,
@@ -198,7 +142,6 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
     acpDebugStream,
   );
 
-  let promptCompleted = false;
   const skipHybridMode = !isYoloMode;
 
   if (skipHybridMode) {
@@ -215,7 +158,7 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
     const fullResponse = await runAcpPrompt(prompt, async (chunk) => {
       // Non-hybrid mode: stream all chunks directly
       if (skipHybridMode) {
-        liveMessage.append(chunk);
+        streamSender.append(chunk);
         return;
       }
 
@@ -231,23 +174,21 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
           logInfo('Mode detected via streaming', { requestId: messageRequestId, mode: conversationMode });
 
           if (conversationMode === ConversationMode.QUICK) {
-            liveMessage.append(result.content);
+            streamSender.append(result.content);
           }
         }
         return;
       }
 
-      liveMessage.append(chunk);
+      streamSender.append(chunk);
     });
-
-    promptCompleted = true;
 
     // Hybrid mode: finalize mode detection if not detected during streaming
     if (!skipHybridMode && conversationMode === ConversationMode.UNKNOWN) {
       const result = detectConversationMode(fullResponse);
       conversationMode = result.isDetected ? result.mode : ConversationMode.QUICK;
       if (conversationMode === ConversationMode.QUICK) {
-        liveMessage.setBuffer(result.content);
+        streamSender.setBuffer(result.content);
       }
 
       if (!result.isDetected) {
@@ -275,22 +216,23 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
     }
 
     // Completion for QUICK mode
-    await liveMessage.finalize();
+    await streamSender.finalize();
 
-    if (!liveMessage.isFinalized()) {
-      const response = liveMessage.getBuffer() || 'No response received.';
+    // Send fallback message if nothing was sent
+    if (!streamSender.hasSentContent()) {
+      const response = streamSender.getBuffer() || 'No response received.';
       await messageContext.sendText(response);
     }
 
-    if (onConversationComplete && liveMessage.getBuffer()) {
+    if (onConversationComplete && streamSender.getBuffer()) {
       try {
-        onConversationComplete(messageContext.text, liveMessage.getBuffer(), messageContext.chatId);
+        onConversationComplete(messageContext.text, streamSender.getBuffer(), messageContext.chatId);
       } catch (error: any) {
         logInfo('Failed to track conversation history', { requestId: messageRequestId, error: getErrorMessage(error) });
       }
     }
   } finally {
-    await liveMessage.cleanup(promptCompleted);
+    streamSender.cancel();
     stopTypingIndicator();
     logInfo('Finished message processing', {
       requestId: messageRequestId,

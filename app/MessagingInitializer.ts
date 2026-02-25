@@ -1,7 +1,7 @@
 import type { AgentManager } from './AgentManager.js';
 import path from 'node:path';
 import type { AcpRuntime } from '../acp/runtimeManager.js';
-import { processSingleTelegramMessage } from '../messaging/liveMessageProcessor.js';
+import { processSingleTelegramMessage } from '../messaging/StreamingMessageSender.js';
 import { createMessageQueueProcessor } from '../messaging/messageQueue.js';
 import { registerMessagingHandlers } from '../messaging/registerTelegramHandlers.js';
 import { SlackMessagingClient } from '../messaging/slackClient.js';
