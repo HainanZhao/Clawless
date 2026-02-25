@@ -10,8 +10,8 @@ type ProcessSingleMessageParams = {
   messageRequestId: number;
   maxResponseLength: number;
   streamUpdateIntervalMs: number;
-  messageGapThresholdMs: number;
   acpDebugStream: boolean;
+  approvalMode?: string;
   runAcpPrompt: (promptText: string, onChunk?: (chunk: string) => void) => Promise<string>;
   scheduleAsyncJob: (message: string, chatId: string, jobRef: string) => Promise<string>;
   logInfo: LogInfoFn;
@@ -171,14 +171,16 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
     messageRequestId,
     maxResponseLength,
     streamUpdateIntervalMs,
-    messageGapThresholdMs: _messageGapThresholdMs,
     acpDebugStream,
+    approvalMode,
     runAcpPrompt,
     scheduleAsyncJob,
     logInfo,
     getErrorMessage,
     onConversationComplete,
   } = params;
+
+  const isYoloMode = approvalMode === 'yolo';
 
   logInfo('Starting message processing', {
     requestId: messageRequestId,
@@ -197,20 +199,28 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
   );
 
   let promptCompleted = false;
-  const modeDetected = !!messageContext.skipHybridMode;
-  let conversationMode = modeDetected ? ConversationMode.QUICK : ConversationMode.UNKNOWN;
-  let prefixBuffer = '';
+  const skipHybridMode = !isYoloMode;
 
-  if (modeDetected) {
-    logInfo('Mode detection skipped due to skipHybridMode flag', { requestId: messageRequestId });
+  if (skipHybridMode) {
+    logInfo('Mode detection skipped: not in yolo mode', { requestId: messageRequestId });
   }
 
   try {
-    const prompt = modeDetected ? messageContext.text : wrapHybridPrompt(messageContext.text);
+    const prompt = skipHybridMode ? messageContext.text : wrapHybridPrompt(messageContext.text);
+
+    // Mode detection state (only used when hybrid mode is enabled)
+    let conversationMode = ConversationMode.UNKNOWN;
+    let prefixBuffer = '';
 
     const fullResponse = await runAcpPrompt(prompt, async (chunk) => {
-      // If we already detected ASYNC mode, we suppress output (handled at end)
-      if (conversationMode === ConversationMode.ASYNC) return;
+      // Non-hybrid mode: stream all chunks directly
+      if (skipHybridMode) {
+        liveMessage.append(chunk);
+        return;
+      }
+
+      // Hybrid mode: detect mode prefix from streaming chunks
+      if (conversationMode === ConversationMode.ASYNC) return; // Suppress output for async
 
       if (conversationMode === ConversationMode.UNKNOWN) {
         prefixBuffer += chunk;
@@ -232,8 +242,8 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
 
     promptCompleted = true;
 
-    // Handle edge case where detection didn't happen in stream
-    if (conversationMode === ConversationMode.UNKNOWN) {
+    // Hybrid mode: finalize mode detection if not detected during streaming
+    if (!skipHybridMode && conversationMode === ConversationMode.UNKNOWN) {
       const result = detectConversationMode(fullResponse);
       conversationMode = result.isDetected ? result.mode : ConversationMode.QUICK;
       if (conversationMode === ConversationMode.QUICK) {
@@ -245,6 +255,7 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
       }
     }
 
+    // Hybrid mode: handle async job scheduling
     if (conversationMode === ConversationMode.ASYNC) {
       const jobRef = `job_${generateShortId()}`;
       logInfo('Async mode confirmed, scheduling background job', { requestId: messageRequestId, jobRef });

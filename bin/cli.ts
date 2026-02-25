@@ -118,7 +118,7 @@ const DEFAULT_CONFIG_TEMPLATE = {
   slackWhitelist: [],
   timezone: 'UTC',
   typingIntervalMs: 4000,
-  streamUpdateIntervalMs: 5000,
+  streamUpdateIntervalMs: 2000,
   cliAgent: 'gemini',
   cliAgentApprovalMode: 'yolo',
   cliAgentModel: '',

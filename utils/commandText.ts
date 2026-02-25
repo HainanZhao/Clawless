@@ -51,7 +51,14 @@ export function isShutdownCommand(text: unknown) {
     return false;
   }
 
-  const commands = new Set(['shutdown', '/shutdown', 'shutdown agent', 'kill agent', 'please shutdown', 'shutdown the agent']);
+  const commands = new Set([
+    'shutdown',
+    '/shutdown',
+    'shutdown agent',
+    'kill agent',
+    'please shutdown',
+    'shutdown the agent',
+  ]);
   return commands.has(normalized);
 }
 
@@ -61,7 +68,16 @@ export function isNukeCommand(text: unknown) {
     return false;
   }
 
-  const commands = new Set(['nuke', '/nuke', 'nuke all', 'kill all', 'shutdown all', '/killall', 'nuke everything', 'shutdown everything']);
+  const commands = new Set([
+    'nuke',
+    '/nuke',
+    'nuke all',
+    'kill all',
+    'shutdown all',
+    '/killall',
+    'nuke everything',
+    'shutdown everything',
+  ]);
   return commands.has(normalized);
 }
 

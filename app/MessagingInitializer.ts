@@ -103,8 +103,8 @@ export class MessagingInitializer {
           messageRequestId,
           maxResponseLength: this.config.MAX_RESPONSE_LENGTH,
           streamUpdateIntervalMs: this.config.STREAM_UPDATE_INTERVAL_MS,
-          messageGapThresholdMs: 15000,
           acpDebugStream: this.config.ACP_DEBUG_STREAM,
+          approvalMode: this.config.CLI_AGENT_APPROVAL_MODE,
           runAcpPrompt: options.acpRuntime.runAcpPrompt,
           scheduleAsyncJob: async (message, chatId, jobRef) => {
             return await options.cronScheduler.executeOneTimeJobImmediately(
