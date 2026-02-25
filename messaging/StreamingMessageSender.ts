@@ -19,8 +19,8 @@ type ProcessSingleMessageParams = {
   streamUpdateIntervalMs: number;
   acpDebugStream: boolean;
   approvalMode?: string;
-  maxRetries: number;
-  retryDelayMs: number;
+  maxRetries?: number;
+  retryDelayMs?: number;
   runAcpPrompt: (promptText: string, onChunk?: (chunk: string) => void) => Promise<string>;
   scheduleAsyncJob: (message: string, chatId: string, jobRef: string) => Promise<string>;
   logInfo: LogInfoFn;
@@ -137,8 +137,8 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
     streamUpdateIntervalMs,
     acpDebugStream,
     approvalMode,
-    maxRetries,
-    retryDelayMs,
+    maxRetries = 3,
+    retryDelayMs = 5000,
     runAcpPrompt,
     scheduleAsyncJob,
     logInfo,
@@ -235,12 +235,12 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
           logInfo('Agent request failed, retrying...', {
             requestId: messageRequestId,
             attempt: attempt + 1,
-            maxRetries: maxRetries + 1,
+            maxRetries,
             delayMs: delay,
             error: errorMessage,
           });
 
-          await messageContext.sendText(`⚠️ Temporary issue, retrying (${attempt + 1}/${maxRetries + 1})...`);
+          await messageContext.sendText(`⚠️ LLM rate limit issue, retrying (${attempt + 1}/${maxRetries})...`);
           await sleep(delay);
         } else {
           // Non-retriable or exhausted retries
