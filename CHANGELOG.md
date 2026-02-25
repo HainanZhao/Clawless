@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.4.10] - 2026-02-25
+
+### Added
+
+- **Telegram Commands**: Bot now responds to `/start`, `/help`, `/status` commands in Telegram.
+
+### Changed
+
+- **Default Approval Mode**: Changed default `CLI_AGENT_APPROVAL_MODE` from `yolo` to `default` for safer tool execution.
+- **Conversation History Threshold**: Optimized history rotation threshold from 1.2x to 5x to reduce unnecessary disk I/O.
+
+### Fixed
+
+- Various architecture improvements and code refactoring for better maintainability.
+- Removed release pipeline from CI (manual npm publishing only).
+
+---
+
 ## [0.4.9] - 2026-02-23
 
 ### Fixed
