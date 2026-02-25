@@ -23,7 +23,7 @@ const configSchema = z.object({
   SLACK_WHITELIST: z.string().default('[]'),
   TZ: z.string().default('UTC'),
   TYPING_INTERVAL_MS: z.coerce.number().default(4000),
-  STREAM_UPDATE_INTERVAL_MS: z.coerce.number().default(5000),
+  STREAM_UPDATE_INTERVAL_MS: z.coerce.number().default(4000),
   CLI_AGENT: z.string().default('gemini'),
   CLI_AGENT_APPROVAL_MODE: z.string().default('default'),
   CLI_AGENT_MODEL: z.string().default(''),
