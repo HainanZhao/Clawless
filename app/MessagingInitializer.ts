@@ -1,3 +1,4 @@
+import type { AgentManager } from './AgentManager.js';
 import path from 'node:path';
 import type { AcpRuntime } from '../acp/runtimeManager.js';
 import { processSingleTelegramMessage } from '../messaging/liveMessageProcessor.js';
@@ -25,7 +26,7 @@ export interface MessagingInitializerOptions {
   config: Config;
   acpRuntime: AcpRuntime;
   cronScheduler: CronScheduler;
-  agentManager: any;
+  agentManager: AgentManager;
   semanticConversationMemory: SemanticConversationMemory;
   conversationHistoryConfig: ConversationHistoryConfig;
   onChatBound: (chatId: string) => void;
@@ -151,8 +152,8 @@ export class MessagingInitializer {
         await options.agentManager.shutdown('Shutdown requested via command');
       },
       shutdownRuntime: async () => {
-        // This will exit the process
-        process.exit(0);
+        // Trigger graceful shutdown via SIGTERM signal
+        process.kill(process.pid, 'SIGTERM');
       },
       enqueueMessage: this.enqueueMessage,
       onAbortRequested: options.acpRuntime.requestManualAbort,

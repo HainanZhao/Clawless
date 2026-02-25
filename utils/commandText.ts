@@ -51,13 +51,8 @@ export function isShutdownCommand(text: unknown) {
     return false;
   }
 
-  const commands = new Set(['shutdown', '/shutdown', 'shutdown agent', 'kill agent']);
-  if (commands.has(normalized)) {
-    return true;
-  }
-
-  const compact = normalized.replace(/\s+/g, ' ');
-  return compact === 'shutdown' || compact === 'please shutdown' || compact === 'shutdown the agent';
+  const commands = new Set(['shutdown', '/shutdown', 'shutdown agent', 'kill agent', 'please shutdown', 'shutdown the agent']);
+  return commands.has(normalized);
 }
 
 export function isNukeCommand(text: unknown) {
@@ -66,13 +61,8 @@ export function isNukeCommand(text: unknown) {
     return false;
   }
 
-  const commands = new Set(['nuke', '/nuke', 'nuke all', 'kill all', 'shutdown all', '/killall']);
-  if (commands.has(normalized)) {
-    return true;
-  }
-
-  const compact = normalized.replace(/\s+/g, ' ');
-  return compact === 'nuke' || compact === 'nuke everything' || compact === 'shutdown everything';
+  const commands = new Set(['nuke', '/nuke', 'nuke all', 'kill all', 'shutdown all', '/killall', 'nuke everything', 'shutdown everything']);
+  return commands.has(normalized);
 }
 
 export function normalizeOutgoingText(text: unknown) {
