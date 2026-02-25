@@ -4,7 +4,7 @@
  * (Telegram, Slack, Discord, etc.)
  */
 
-import { isAbortCommand } from '../utils/commandText.js';
+import { isAbortCommand, isAbortAllCommand, isShutdownCommand, isNukeCommand } from '../utils/commandText.js';
 import { getErrorMessage } from '../utils/error.js';
 import { isUserAuthorized } from '../utils/telegramWhitelist.js';
 
@@ -15,6 +15,9 @@ type RegisterMessagingHandlersParams = {
   platformLabel?: string;
   hasActiveAcpPrompt: () => boolean;
   cancelActiveAcpPrompt: () => Promise<void>;
+  cancelAllJobs: () => Promise<void>;
+  shutdownAgent: () => Promise<void>;
+  shutdownRuntime: () => Promise<void>;
   enqueueMessage: (messageContext: any) => Promise<void>;
   onAbortRequested: () => void;
   onChatBound: (chatId: string) => void;
@@ -29,6 +32,9 @@ export function registerMessagingHandlers({
   platformLabel = 'Messaging',
   hasActiveAcpPrompt,
   cancelActiveAcpPrompt,
+  cancelAllJobs,
+  shutdownAgent,
+  shutdownRuntime,
   enqueueMessage,
   onAbortRequested,
   onChatBound,
@@ -64,6 +70,43 @@ export function registerMessagingHandlers({
       onAbortRequested();
       await messageContext.sendText('⏹️ Abort requested. Stopping current agent action...');
       await cancelActiveAcpPrompt();
+      return;
+    }
+
+    if (isAbortAllCommand(messageContext.text)) {
+      await messageContext.sendText('⏹️ Aborting all async jobs...');
+      try {
+        await cancelAllJobs();
+        await messageContext.sendText('✅ All async jobs aborted.');
+      } catch (error) {
+        logError('Error aborting all jobs:', error);
+        await messageContext.sendText('❌ Failed to abort some jobs.');
+      }
+      return;
+    }
+
+    if (isShutdownCommand(messageContext.text)) {
+      await messageContext.sendText('🛑 Shutting down agent...');
+      try {
+        await shutdownAgent();
+        await messageContext.sendText('✅ Agent shutdown complete.');
+      } catch (error) {
+        logError('Error shutting down agent:', error);
+        await messageContext.sendText('❌ Failed to shutdown agent.');
+      }
+      return;
+    }
+
+    if (isNukeCommand(messageContext.text)) {
+      await messageContext.sendText('💥 NUKE! Shutting down everything...');
+      try {
+        await shutdownAgent();
+        await shutdownRuntime();
+        await messageContext.sendText('💥 Everything shutdown. Bot will restart if monitored.');
+      } catch (error) {
+        logError('Error during nuke:', error);
+        await messageContext.sendText('❌ Nuke command failed.');
+      }
       return;
     }
 

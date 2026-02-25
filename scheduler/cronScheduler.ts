@@ -432,6 +432,26 @@ export class CronScheduler {
   }
 
   /**
+   * Cancel all running jobs
+   */
+  async cancelAllJobs(): Promise<void> {
+    for (const [id, job] of this.jobs) {
+      if (job.task && job.inFlight) {
+        job.task.stop();
+      }
+      if (job.timeout) {
+        clearTimeout(job.timeout);
+      }
+      // Remove async conversation jobs; keep persisted recurring schedules
+      if (job.config.type === 'async_conversation') {
+        this.jobs.delete(id);
+      }
+    }
+    // Persist changes after clearing async jobs
+    this.persistSchedules();
+  }
+
+  /**
    * Shutdown all scheduled jobs
    */
   shutdown(): void {
