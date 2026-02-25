@@ -5,17 +5,26 @@ import { smartTruncate } from './messageTruncator.js';
 
 type LogInfoFn = (message: string, details?: unknown) => void;
 
+type MessageContext = {
+  chatId: string;
+  text: string;
+  startTyping: () => () => void;
+  sendText: (text: string) => Promise<unknown>;
+};
+
 type ProcessSingleMessageParams = {
-  messageContext: any;
+  messageContext: MessageContext;
   messageRequestId: number;
   maxResponseLength: number;
   streamUpdateIntervalMs: number;
   acpDebugStream: boolean;
   approvalMode?: string;
+  maxRetries: number;
+  retryDelayMs: number;
   runAcpPrompt: (promptText: string, onChunk?: (chunk: string) => void) => Promise<string>;
   scheduleAsyncJob: (message: string, chatId: string, jobRef: string) => Promise<string>;
   logInfo: LogInfoFn;
-  getErrorMessage: (error: unknown, fallbackMessage?: string) => string;
+  getErrorMessage: (error: unknown) => string;
   onConversationComplete?: (userMessage: string, botResponse: string, chatId: string) => void;
 };
 
@@ -30,7 +39,7 @@ class StreamingMessageSender {
   private debouncedFlush: ReturnType<typeof debounce>;
 
   constructor(
-    private readonly messageContext: any,
+    private readonly messageContext: MessageContext,
     private readonly requestId: number,
     private readonly maxResponseLength: number,
     streamUpdateIntervalMs: number,
@@ -58,6 +67,13 @@ class StreamingMessageSender {
 
   setBuffer(text: string) {
     this.buffer = text;
+  }
+
+  reset() {
+    this.buffer = '';
+    this.sentLength = 0;
+    this.finalized = false;
+    this.debouncedFlush.cancel();
   }
 
   private getTruncatedBuffer() {
@@ -109,6 +125,10 @@ class StreamingMessageSender {
   }
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function processSingleTelegramMessage(params: ProcessSingleMessageParams) {
   const {
     messageContext,
@@ -117,6 +137,8 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
     streamUpdateIntervalMs,
     acpDebugStream,
     approvalMode,
+    maxRetries,
+    retryDelayMs,
     runAcpPrompt,
     scheduleAsyncJob,
     logInfo,
@@ -124,7 +146,7 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
     onConversationComplete,
   } = params;
 
-  const isYoloMode = approvalMode === 'yolo';
+  const isHybridMode = approvalMode === 'yolo';
 
   logInfo('Starting message processing', {
     requestId: messageRequestId,
@@ -142,66 +164,115 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
     acpDebugStream,
   );
 
-  const skipHybridMode = !isYoloMode;
-
-  if (skipHybridMode) {
+  if (!isHybridMode) {
     logInfo('Mode detection skipped: not in yolo mode', { requestId: messageRequestId });
   }
 
   try {
-    const prompt = skipHybridMode ? messageContext.text : wrapHybridPrompt(messageContext.text);
+    const prompt = isHybridMode ? wrapHybridPrompt(messageContext.text) : messageContext.text;
 
     // Mode detection state (only used when hybrid mode is enabled)
     let conversationMode = ConversationMode.UNKNOWN;
     let prefixBuffer = '';
 
-    const fullResponse = await runAcpPrompt(prompt, async (chunk) => {
-      // Non-hybrid mode: stream all chunks directly
-      if (skipHybridMode) {
-        streamSender.append(chunk);
-        return;
-      }
+    // Retry logic with exponential backoff
+    let fullResponse = '';
 
-      // Hybrid mode: detect mode prefix from streaming chunks
-      if (conversationMode === ConversationMode.ASYNC) return; // Suppress output for async
-
-      if (conversationMode === ConversationMode.UNKNOWN) {
-        prefixBuffer += chunk;
-        const result = detectConversationMode(prefixBuffer);
-
-        if (result.isDetected) {
-          conversationMode = result.mode;
-          logInfo('Mode detected via streaming', { requestId: messageRequestId, mode: conversationMode });
-
-          if (conversationMode === ConversationMode.QUICK) {
-            streamSender.append(result.content);
-          }
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // Reset stream sender state for retry
+        if (attempt > 0) {
+          streamSender.reset();
+          prefixBuffer = '';
+          conversationMode = ConversationMode.UNKNOWN;
         }
-        return;
-      }
 
-      streamSender.append(chunk);
-    });
+        fullResponse = await runAcpPrompt(prompt, async (chunk) => {
+          // Non-hybrid mode: stream all chunks directly
+          if (!isHybridMode) {
+            streamSender.append(chunk);
+            return;
+          }
+
+          // Hybrid mode: detect mode prefix from streaming chunks
+          if (conversationMode === ConversationMode.ASYNC) return; // Suppress output for async
+
+          if (conversationMode === ConversationMode.UNKNOWN) {
+            prefixBuffer += chunk;
+            const result = detectConversationMode(prefixBuffer);
+
+            if (result.isDetected) {
+              conversationMode = result.mode;
+              logInfo('Mode detected via streaming', { requestId: messageRequestId, mode: conversationMode });
+
+              if (conversationMode === ConversationMode.QUICK) {
+                streamSender.append(result.content);
+              }
+            }
+            return;
+          }
+
+          streamSender.append(chunk);
+        });
+
+        // Success - break out of retry loop
+        break;
+      } catch (error: any) {
+        const errorMessage = getErrorMessage(error);
+
+        // Check if this is a retriable error (capacity, rate limit, timeout, etc.)
+        const isRetriable =
+          errorMessage.toLowerCase().includes('capacity') ||
+          errorMessage.toLowerCase().includes('rate limit') ||
+          errorMessage.toLowerCase().includes('timeout') ||
+          errorMessage.toLowerCase().includes('unavailable') ||
+          errorMessage.toLowerCase().includes('overload');
+
+        const canRetry = attempt < maxRetries && isRetriable;
+
+        if (canRetry) {
+          const delay = retryDelayMs * 2 ** attempt; // Exponential backoff
+          logInfo('Agent request failed, retrying...', {
+            requestId: messageRequestId,
+            attempt: attempt + 1,
+            maxRetries: maxRetries + 1,
+            delayMs: delay,
+            error: errorMessage,
+          });
+
+          await messageContext.sendText(`⚠️ Temporary issue, retrying (${attempt + 1}/${maxRetries + 1})...`);
+          await sleep(delay);
+        } else {
+          // Non-retriable or exhausted retries
+          throw error;
+        }
+      }
+    }
+
+    // fullResponse is guaranteed to be set at this point
+    const response = fullResponse;
 
     // Hybrid mode: finalize mode detection if not detected during streaming
-    if (!skipHybridMode && conversationMode === ConversationMode.UNKNOWN) {
-      const result = detectConversationMode(fullResponse);
-      conversationMode = result.isDetected ? result.mode : ConversationMode.QUICK;
+    let modeResult: ReturnType<typeof detectConversationMode> | null = null;
+    if (isHybridMode && conversationMode === ConversationMode.UNKNOWN) {
+      modeResult = detectConversationMode(response);
+      conversationMode = modeResult.isDetected ? modeResult.mode : ConversationMode.QUICK;
       if (conversationMode === ConversationMode.QUICK) {
-        streamSender.setBuffer(result.content);
+        streamSender.setBuffer(modeResult.content);
       }
 
-      if (!result.isDetected) {
+      if (!modeResult.isDetected) {
         logInfo('No mode prefix detected, defaulting to QUICK', { requestId: messageRequestId });
       }
     }
 
-    // Hybrid mode: handle async job scheduling
+    // Handle async job scheduling when ASYNC mode is detected
     if (conversationMode === ConversationMode.ASYNC) {
       const jobRef = `job_${generateShortId()}`;
       logInfo('Async mode confirmed, scheduling background job', { requestId: messageRequestId, jobRef });
 
-      const taskMessage = detectConversationMode(fullResponse).content || messageContext.text;
+      // Reuse modeResult if available, otherwise parse response
+      const taskMessage = modeResult?.content || detectConversationMode(response).content;
       void scheduleAsyncJob(taskMessage, messageContext.chatId, jobRef).catch((error) => {
         logInfo('Fire-and-forget scheduleAsyncJob failed', {
           requestId: messageRequestId,
@@ -220,8 +291,8 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
 
     // Send fallback message if nothing was sent
     if (!streamSender.hasSentContent()) {
-      const response = streamSender.getBuffer() || 'No response received.';
-      await messageContext.sendText(response);
+      const fallbackResponse = streamSender.getBuffer() || 'No response received.';
+      await messageContext.sendText(fallbackResponse);
     }
 
     if (onConversationComplete && streamSender.getBuffer()) {
