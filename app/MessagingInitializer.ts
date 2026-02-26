@@ -1,7 +1,7 @@
 import type { AgentManager } from './AgentManager.js';
 import path from 'node:path';
 import type { AcpRuntime } from '../acp/runtimeManager.js';
-import { processSingleTelegramMessage } from '../messaging/liveMessageProcessor.js';
+import { processSingleTelegramMessage } from '../messaging/StreamingMessageSender.js';
 import { createMessageQueueProcessor } from '../messaging/messageQueue.js';
 import { registerMessagingHandlers } from '../messaging/registerTelegramHandlers.js';
 import { SlackMessagingClient } from '../messaging/slackClient.js';
@@ -103,8 +103,10 @@ export class MessagingInitializer {
           messageRequestId,
           maxResponseLength: this.config.MAX_RESPONSE_LENGTH,
           streamUpdateIntervalMs: this.config.STREAM_UPDATE_INTERVAL_MS,
-          messageGapThresholdMs: 15000,
           acpDebugStream: this.config.ACP_DEBUG_STREAM,
+          approvalMode: this.config.CLI_AGENT_APPROVAL_MODE,
+          maxRetries: this.config.CLI_AGENT_MAX_RETRIES,
+          retryDelayMs: this.config.CLI_AGENT_RETRY_DELAY_MS,
           runAcpPrompt: options.acpRuntime.runAcpPrompt,
           scheduleAsyncJob: async (message, chatId, jobRef) => {
             return await options.cronScheduler.executeOneTimeJobImmediately(

@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.4.11] - 2026-02-25
+
+### Changed
+
+- **Hybrid Mode Optimization**: Async background jobs are now only scheduled when `cliAgentApprovalMode` is set to `yolo`. In non-yolo modes, the agent prompt is sent directly without hybrid mode wrapping, improving response clarity and reducing unnecessary complexity.
+- **Required Approval Mode**: `cliAgentApprovalMode` is now a mandatory field in the config TUI, ensuring users explicitly choose an approval mode during setup.
+
+### Removed
+
+- Removed unused `messageGapThresholdMs` parameter from message processor.
+- Removed dead code referencing `messageContext.skipHybridMode` which was never set.
+
 ## [0.4.10] - 2026-02-25
 
 ### Added

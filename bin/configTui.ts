@@ -129,7 +129,7 @@ const CONFIG_FIELDS: ConfigField[] = [
     description: 'CLI agent approval behavior for tool/edit actions.',
     valueType: 'enum',
     enumValues: ['default', 'auto_edit', 'yolo', 'plan'],
-    isRequired: () => false,
+    isRequired: () => true,
     isVisible: () => true,
     order: 25,
   },
