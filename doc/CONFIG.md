@@ -85,7 +85,7 @@ Run `clawless --config` to open the interactive editor:
 All config keys can be overridden via environment variables (uppercase, underscore-separated):
 
 ```bash
-CLI_AGENT=qwen
+CLI_AGENT=gemini
 TELEGRAM_WHITELIST=user1,user2
 ```
 
@@ -107,7 +107,7 @@ All `config.json` keys, defaults, and meanings:
 | `timezone` | `UTC` | Timezone used by scheduler cron execution. |
 | `typingIntervalMs` | `4000` | Typing indicator refresh interval while processing. |
 | `streamUpdateIntervalMs` | `5000` | Minimum interval between progressive streaming message updates. |
-| `cliAgent` | `gemini` | CLI agent type to use (`gemini` or `opencode`). |
+| `cliAgent` | `gemini` | CLI agent type to use (`gemini`, `opencode`, or `claude`). |
 | `cliAgentApprovalMode` | `yolo` | Agent approval mode (`default`, `auto_edit`, `yolo`, `plan`). |
 | `cliAgentModel` | `""` | Optional model override for the agent. |
 | `cliAgentTimeoutMs` | `1200000` | Hard timeout for one agent run (ms). |
@@ -144,7 +144,7 @@ All `config.json` keys, defaults, and meanings:
 
 ## CLI Agent Selection
 
-To switch between different CLI agents (e.g., Gemini CLI, OpenCode), set the `cliAgent` configuration key:
+To switch between different CLI agents (e.g., Gemini CLI, OpenCode, Claude Code), set the `cliAgent` configuration key:
 
 ```json
 {
@@ -156,5 +156,6 @@ To switch between different CLI agents (e.g., Gemini CLI, OpenCode), set the `cl
 Supported agents:
 - `gemini` - Google Gemini CLI (default)
 - `opencode` - OpenCode CLI agent
+- `claude` - Claude Code CLI agent
 
 The system will automatically validate that the selected agent is installed and executable at startup.

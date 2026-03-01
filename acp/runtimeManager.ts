@@ -331,6 +331,8 @@ export function createAcpRuntime({
       try {
         await acpConnection.initialize({
           protocolVersion: acp.PROTOCOL_VERSION,
+          // Omit fs capability entirely since we don't provide real filesystem access
+          // Declaring fs: {} causes some ACP servers (e.g., Qwen) to expect readTextFile/writeTextFile
           clientCapabilities: {},
         });
         logInfo('ACP connection initialized');
