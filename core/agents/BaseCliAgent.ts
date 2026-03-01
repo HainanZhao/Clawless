@@ -39,7 +39,7 @@ export abstract class BaseCliAgent {
    * Default implementation works for most ACP-capable agents
    */
   buildAcpArgs(): string[] {
-    const args = ['--experimental-acp'];
+    const args = ['--acp'];
 
     if (this.config.includeDirectories && this.config.includeDirectories.length > 0) {
       const includeDirectorySet = new Set(this.config.includeDirectories);
