@@ -2,8 +2,9 @@ import type { BaseCliAgent, CliAgentConfig } from './BaseCliAgent.js';
 import { GeminiAgent } from './GeminiAgent.js';
 import { OpencodeAgent } from './OpencodeAgent.js';
 import { ClaudeCodeAgent } from './ClaudeCodeAgent.js';
+import { QwenAgent } from './QwenAgent.js';
 
-export const SUPPORTED_AGENTS = ['gemini', 'opencode', 'claude'] as const;
+export const SUPPORTED_AGENTS = ['gemini', 'opencode', 'claude', 'qwen'] as const;
 export type AgentType = (typeof SUPPORTED_AGENTS)[number];
 
 /**
@@ -17,6 +18,8 @@ export function createCliAgent(agentType: AgentType, config: CliAgentConfig): Ba
       return new OpencodeAgent(config);
     case 'claude':
       return new ClaudeCodeAgent(config);
+    case 'qwen':
+      return new QwenAgent(config);
     default:
       throw new Error(`Unsupported agent type: ${agentType}. Supported types: ${SUPPORTED_AGENTS.join(', ')}`);
   }
