@@ -7,7 +7,7 @@
 import { spawnSync } from 'node:child_process';
 
 export interface CliAgentConfig {
-  command: string;
+  command?: string;
   approvalMode?: string;
   model?: string;
   includeDirectories?: string[];
@@ -31,8 +31,17 @@ export abstract class BaseCliAgent {
 
   /**
    * Get the CLI command name (e.g., 'gemini', 'opencode')
+   * Each agent subclass should implement this to return its default command.
    */
   abstract getCommand(): string;
+
+  /**
+   * Get the effective command, using config override if provided.
+   * This allows users to override the default command via config.
+   */
+  getEffectiveCommand(): string {
+    return this.config.command || this.getCommand();
+  }
 
   /**
    * Build command-line arguments for ACP mode
