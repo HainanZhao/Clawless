@@ -7,7 +7,7 @@
 
 Clawless is a lightweight bridge that connects your favorite local AI agent CLI to Telegram or Slack. Keep your tools, swap runtimes, avoid lock-in.
 
-**Supported agents**: Gemini CLI (default), OpenCode, Claude Code
+**Supported agents**: Gemini CLI (default), OpenCode, Claude Code, **Qwen CLI**
 
 ## Why Clawless
 
@@ -78,7 +78,7 @@ Or manually edit `~/.clawless/config.json`:
 }
 ```
 
-Or set `CLI_AGENT=opencode` / `CLI_AGENT=claude`.
+Or set `CLI_AGENT=opencode` / `CLI_AGENT=claude` / `CLI_AGENT=qwen`.
 
 ## Run in Background
 

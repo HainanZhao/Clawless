@@ -85,7 +85,7 @@ Run `clawless --config` to open the interactive editor:
 All config keys can be overridden via environment variables (uppercase, underscore-separated):
 
 ```bash
-CLI_AGENT=opencode
+CLI_AGENT=qwen
 TELEGRAM_WHITELIST=user1,user2
 ```
 
