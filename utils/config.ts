@@ -24,6 +24,7 @@ const configSchema = z.object({
   TZ: z.string().default('UTC'),
   TYPING_INTERVAL_MS: z.coerce.number().default(4000),
   STREAM_UPDATE_INTERVAL_MS: z.coerce.number().default(4000),
+  TELEGRAM_NATIVE_DRAFT_STREAMING: z.preprocess((v) => String(v).toLowerCase() === 'true', z.boolean()).default(true),
   CLI_AGENT: z.string().default('gemini'),
   CLI_AGENT_APPROVAL_MODE: z.string().default('default'),
   CLI_AGENT_MODEL: z.string().default(''),

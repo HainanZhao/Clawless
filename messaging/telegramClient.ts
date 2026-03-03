@@ -145,6 +145,111 @@ export class TelegramMessageContext {
   async removeMessage(messageId: number) {
     await this.ctx.telegram.deleteMessage(this.ctx.chat.id, messageId);
   }
+
+  /**
+   * Sends a draft message using Telegram's native draft streaming API (Bot API 9.3+).
+   * This is optimized for streaming partial content - no need to edit messages manually.
+   * @param text The partial text to show in the draft
+   * @returns The message ID of the draft message
+   */
+  async sendDraft(text: string) {
+    const formattedText = toTelegramMarkdown(text || '…');
+    try {
+      // Use raw API call for sendMessageDraft (Bot API 9.3+)
+      const result = await this.ctx.telegram.call('sendMessageDraft', {
+        chat_id: this.chatId,
+        text: formattedText,
+        parse_mode: TELEGRAM_PARSE_MODE,
+      });
+      return result?.message_id as number | undefined;
+    } catch (error: any) {
+      const errorMessage = String(error?.message || '').toLowerCase();
+      // Fallback to escape if markdown parsing fails
+      if (errorMessage.includes('reserved') || errorMessage.includes('parse entities')) {
+        const result = await this.ctx.telegram.call('sendMessageDraft', {
+          chat_id: this.chatId,
+          text: escapeMarkdownV2(text || '…'),
+          parse_mode: TELEGRAM_PARSE_MODE,
+        });
+        return result?.message_id as number | undefined;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Updates an existing draft message with new text.
+   * @param messageId The message ID to update
+   * @param text The new text content
+   */
+  async updateDraft(messageId: number, text: string) {
+    const formattedText = toTelegramMarkdown(text || '…');
+    try {
+      // Use editMessageText for draft updates (same API behavior)
+      await this.ctx.telegram.editMessageText(this.ctx.chat.id, messageId, undefined, formattedText, {
+        parse_mode: TELEGRAM_PARSE_MODE,
+      });
+    } catch (error: any) {
+      const errorMessage = String(error?.message || '').toLowerCase();
+      if (errorMessage.includes('reserved') || errorMessage.includes('parse entities')) {
+        await this.ctx.telegram.editMessageText(this.ctx.chat.id, messageId, undefined, escapeMarkdownV2(text || '…'), {
+          parse_mode: TELEGRAM_PARSE_MODE,
+        });
+      }
+    }
+  }
+
+  /**
+   * Finalizes a draft message by converting it to a regular message.
+   * @param messageId The draft message ID
+   * @param text The final text content
+   */
+  async finalizeDraft(messageId: number, text: string) {
+    const defaultResponse = 'No response received.';
+    const finalText = text || defaultResponse;
+    const rawChunks = splitIntoSmartChunks(finalText, this.maxMessageLength);
+    const formattedChunks = rawChunks.map((c) => toTelegramMarkdown(c));
+
+    // Edit the first chunk as the final message
+    try {
+      await this.ctx.telegram.editMessageText(
+        this.ctx.chat.id,
+        messageId,
+        undefined,
+        formattedChunks[0] || toTelegramMarkdown(defaultResponse),
+        { parse_mode: TELEGRAM_PARSE_MODE },
+      );
+    } catch (error: any) {
+      const errorMessage = String(error?.message || '').toLowerCase();
+      if (errorMessage.includes('message is not modified')) {
+        // ignore - no changes needed
+      } else if (errorMessage.includes('reserved') || errorMessage.includes('parse entities')) {
+        await this.ctx.telegram.editMessageText(
+          this.ctx.chat.id,
+          messageId,
+          undefined,
+          escapeMarkdownV2(rawChunks[0] || defaultResponse),
+          { parse_mode: TELEGRAM_PARSE_MODE },
+        );
+      } else {
+        throw error;
+      }
+    }
+
+    // Send any additional chunks as follow-up messages
+    for (let index = 1; index < formattedChunks.length; index += 1) {
+      try {
+        await this.ctx.reply(formattedChunks[index], { parse_mode: TELEGRAM_PARSE_MODE });
+      } catch (error: any) {
+        const errorMessage = String(error?.message || '').toLowerCase();
+        if (errorMessage.includes('reserved') || errorMessage.includes('parse entities')) {
+          await this.ctx.reply(escapeMarkdownV2(rawChunks[index]), { parse_mode: TELEGRAM_PARSE_MODE });
+        } else {
+          throw error;
+        }
+      }
+    }
+  }
 }
 
 export class TelegramMessagingClient {
