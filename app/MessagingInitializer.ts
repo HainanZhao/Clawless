@@ -4,8 +4,7 @@ import type { AcpRuntime } from '../acp/runtimeManager.js';
 import { processSingleTelegramMessage } from '../messaging/StreamingMessageSender.js';
 import { createMessageQueueProcessor } from '../messaging/messageQueue.js';
 import { registerMessagingHandlers } from '../messaging/registerTelegramHandlers.js';
-import { SlackMessagingClient } from '../messaging/slackClient.js';
-import { TelegramMessagingClient } from '../messaging/telegramClient.js';
+import { VercelChatMessagingClient } from '../messaging/vercelChatClient.js';
 import type { CronScheduler } from '../scheduler/cronScheduler.js';
 import { ensureClawlessHomeDirectory, persistCallbackChatId } from '../utils/callbackState.js';
 import type { Config } from '../utils/config.js';
@@ -43,8 +42,9 @@ const messagingPlatforms = {
       if (TELEGRAM_WHITELIST.length === 0) {
         throw new WhitelistError('Telegram');
       }
-      return new TelegramMessagingClient({
-        token: config.TELEGRAM_TOKEN || '',
+      return new VercelChatMessagingClient({
+        platform: 'telegram',
+        telegramToken: config.TELEGRAM_TOKEN || '',
         typingIntervalMs: config.TYPING_INTERVAL_MS,
         maxMessageLength: config.MAX_RESPONSE_LENGTH,
       });
@@ -58,10 +58,11 @@ const messagingPlatforms = {
       if (SLACK_WHITELIST.length === 0) {
         throw new WhitelistError('Slack');
       }
-      return new SlackMessagingClient({
-        token: config.SLACK_BOT_TOKEN || '',
-        signingSecret: config.SLACK_SIGNING_SECRET || '',
-        appToken: config.SLACK_APP_TOKEN,
+      return new VercelChatMessagingClient({
+        platform: 'slack',
+        slackToken: config.SLACK_BOT_TOKEN || '',
+        slackSigningSecret: config.SLACK_SIGNING_SECRET || '',
+        slackAppToken: config.SLACK_APP_TOKEN,
         typingIntervalMs: config.TYPING_INTERVAL_MS,
         maxMessageLength: config.MAX_RESPONSE_LENGTH,
       });
