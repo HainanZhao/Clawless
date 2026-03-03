@@ -1,5 +1,5 @@
-import { BaseCliAgent, type CliAgentCapabilities } from './BaseCliAgent.js';
 import { getOpenCodeMcpServersForAcp } from '../../utils/opencodeMcpHelpers.js';
+import { BaseCliAgent, type CliAgentCapabilities } from './BaseCliAgent.js';
 
 /**
  * OpenCode CLI agent implementation.
@@ -17,7 +17,7 @@ export class OpencodeAgent extends BaseCliAgent {
       args.push('-m', this.config.model);
     }
 
-    args.push(promptText);
+    args.push('--prompt', promptText);
     return args;
   }
 
