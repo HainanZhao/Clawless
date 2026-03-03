@@ -10,6 +10,10 @@ type MessageContext = {
   text: string;
   startTyping: () => () => void;
   sendText: (text: string) => Promise<unknown>;
+  // Native draft streaming methods (Bot API 9.3+)
+  sendDraft?: (text: string) => Promise<number | undefined>;
+  updateDraft?: (messageId: number, text: string) => Promise<void>;
+  finalizeDraft?: (messageId: number, text: string) => Promise<void>;
 };
 
 type ProcessSingleMessageParams = {
@@ -26,17 +30,22 @@ type ProcessSingleMessageParams = {
   logInfo: LogInfoFn;
   getErrorMessage: (error: unknown) => string;
   onConversationComplete?: (userMessage: string, botResponse: string, chatId: string) => void;
+  /** Use native Telegram draft streaming (Bot API 9.3+). Falls back to sendText if not available. */
+  useNativeDraftStreaming?: boolean;
 };
 
 /**
  * Manages streaming message output by sending chunks periodically.
  * Tracks what has been sent to avoid duplicate content.
+ * Supports both legacy mode (sendText) and native draft streaming (sendMessageDraft API).
  */
 class StreamingMessageSender {
   private sentLength = 0;
   private buffer = '';
   private finalized = false;
   private debouncedFlush: ReturnType<typeof debounce>;
+  private draftMessageId: number | undefined;
+  private useNativeDraft: boolean = false;
 
   constructor(
     private readonly messageContext: MessageContext,
@@ -46,7 +55,15 @@ class StreamingMessageSender {
     private readonly logInfo: LogInfoFn,
     private readonly getErrorMessage: (error: unknown) => string,
     private readonly acpDebugStream: boolean,
+    useNativeDraftStreaming: boolean = false,
   ) {
+    // Check if native draft streaming is available and enabled
+    this.useNativeDraft =
+      useNativeDraftStreaming &&
+      typeof messageContext.sendDraft === 'function' &&
+      typeof messageContext.updateDraft === 'function' &&
+      typeof messageContext.finalizeDraft === 'function';
+
     this.debouncedFlush = debounce(
       async () => {
         await this.sendNewContent();
@@ -54,6 +71,10 @@ class StreamingMessageSender {
       streamUpdateIntervalMs,
       { leading: false, trailing: true },
     );
+
+    if (this.useNativeDraft) {
+      this.logInfo('Using native draft streaming (Bot API 9.3+)', { requestId: this.requestId });
+    }
   }
 
   append(chunk: string) {
@@ -73,6 +94,7 @@ class StreamingMessageSender {
     this.buffer = '';
     this.sentLength = 0;
     this.finalized = false;
+    this.draftMessageId = undefined;
     this.debouncedFlush.cancel();
   }
 
@@ -88,14 +110,34 @@ class StreamingMessageSender {
     if (!newContent) return;
 
     try {
-      await this.messageContext.sendText(newContent);
-      this.sentLength = text.length;
-      if (this.acpDebugStream) {
-        this.logInfo('Stream chunk sent', {
-          requestId: this.requestId,
-          chunkLength: newContent.length,
-        });
+      if (this.useNativeDraft) {
+        // Native draft streaming - sendMessageDraft API
+        if (this.draftMessageId === undefined) {
+          // First chunk - create draft
+          this.draftMessageId = await this.messageContext.sendDraft?.(newContent);
+          if (this.acpDebugStream) {
+            this.logInfo('Draft created', {
+              requestId: this.requestId,
+              messageId: this.draftMessageId,
+              chunkLength: newContent.length,
+            });
+          }
+        } else {
+          // Subsequent chunks - update draft
+          await this.messageContext.updateDraft?.(this.draftMessageId, newContent);
+          if (this.acpDebugStream) {
+            this.logInfo('Draft updated', {
+              requestId: this.requestId,
+              messageId: this.draftMessageId,
+              chunkLength: newContent.length,
+            });
+          }
+        }
+      } else {
+        // Legacy mode - send new message for each chunk
+        await this.messageContext.sendText(newContent);
       }
+      this.sentLength = text.length;
     } catch (error: any) {
       this.logInfo('Failed to send stream chunk', {
         requestId: this.requestId,
@@ -113,6 +155,19 @@ class StreamingMessageSender {
     }
 
     await this.sendNewContent();
+
+    // Finalize draft if using native draft streaming
+    if (this.useNativeDraft && this.draftMessageId !== undefined) {
+      const finalText = this.getTruncatedBuffer();
+      await this.messageContext.finalizeDraft?.(this.draftMessageId, finalText);
+      if (this.acpDebugStream) {
+        this.logInfo('Draft finalized', {
+          requestId: this.requestId,
+          messageId: this.draftMessageId,
+        });
+      }
+    }
+
     this.finalized = true;
   }
 
@@ -144,6 +199,7 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
     logInfo,
     getErrorMessage,
     onConversationComplete,
+    useNativeDraftStreaming = false,
   } = params;
 
   const isHybridMode = approvalMode === 'yolo';
@@ -151,6 +207,7 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
   logInfo('Starting message processing', {
     requestId: messageRequestId,
     chatId: messageContext.chatId,
+    useNativeDraftStreaming,
   });
 
   const stopTypingIndicator = messageContext.startTyping();
@@ -162,6 +219,7 @@ export async function processSingleTelegramMessage(params: ProcessSingleMessageP
     logInfo,
     getErrorMessage,
     acpDebugStream,
+    useNativeDraftStreaming,
   );
 
   if (!isHybridMode) {

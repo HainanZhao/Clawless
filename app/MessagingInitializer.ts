@@ -103,6 +103,8 @@ export class MessagingInitializer {
           messageRequestId,
           maxResponseLength: this.config.MAX_RESPONSE_LENGTH,
           streamUpdateIntervalMs: this.config.STREAM_UPDATE_INTERVAL_MS,
+          useNativeDraftStreaming:
+            this.config.MESSAGING_PLATFORM === 'telegram' && this.config.TELEGRAM_NATIVE_DRAFT_STREAMING,
           acpDebugStream: this.config.ACP_DEBUG_STREAM,
           approvalMode: this.config.CLI_AGENT_APPROVAL_MODE,
           maxRetries: this.config.CLI_AGENT_MAX_RETRIES,
