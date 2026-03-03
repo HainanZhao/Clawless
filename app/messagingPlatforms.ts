@@ -3,11 +3,10 @@
  * Used by MessagingInitializer and platform implementations
  */
 
-import type { SlackMessageContext, SlackMessagingClient } from '../messaging/slackClient.js';
-import type { TelegramMessageContext, TelegramMessagingClient } from '../messaging/telegramClient.js';
+import type { VercelChatMessageContext, VercelChatMessagingClient } from '../messaging/vercelChatClient.js';
 
-export type MessagingClient = TelegramMessagingClient | SlackMessagingClient;
-export type MessageContext = TelegramMessageContext | SlackMessageContext;
+export type MessagingClient = VercelChatMessagingClient;
+export type MessageContext = VercelChatMessageContext;
 
 // Re-export errors from centralized error module
 export { ClawlessError, PlatformNotSupportedError, WhitelistError } from '../utils/errors.js';
