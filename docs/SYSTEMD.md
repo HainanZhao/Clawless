@@ -9,10 +9,10 @@ This guide explains how to run Clawless as a systemd service.
 
 ## Quick Setup
 
-Run the setup script:
+Run the setup script as root (it will install the service unit into `/etc/systemd/system`):
 ```bash
 chmod +x scripts/install-service.sh
-./scripts/install-service.sh
+sudo ./scripts/install-service.sh
 ```
 
 ## Manual Setup
@@ -43,11 +43,11 @@ npm run build
 
 2. Create service file with your paths:
 ```bash
+sed -i "s|%USER%|$(whoami)|g" clawless.service
+sed -i "s|%GROUP%|$(id -gn)|g" clawless.service
+sed -i "s|%HOME%|$HOME|g" clawless.service
+sed -i "s|%WORKDIR%|$(pwd)|g" clawless.service
 sudo cp clawless.service /etc/systemd/system/clawless.service
-sudo sed -i "s|%USER%|$(whoami)|g" /etc/systemd/system/clawless.service
-sudo sed -i "s|%GROUP%|$(id -gn)|g" /etc/systemd/system/clawless.service
-sudo sed -i "s|%HOME%|$HOME|g" /etc/systemd/system/clawless.service
-sudo sed -i "s|%WORKDIR%|$(pwd)|g" /etc/systemd/system/clawless.service
 ```
 
 ## Service Management

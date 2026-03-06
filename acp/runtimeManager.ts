@@ -333,7 +333,7 @@ export function createAcpRuntime({
       let fullResponse = '';
       let isSettled = false;
       let noOutputTimeout: NodeJS.Timeout | null = null;
-      let firstChunkAt: number | null = null;
+
 
       const clearTimers = () => {
         clearTimeout(overallTimeout);

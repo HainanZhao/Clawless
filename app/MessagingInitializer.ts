@@ -154,8 +154,31 @@ export class MessagingInitializer {
         await options.agentManager.shutdown('Shutdown requested via command');
       },
       shutdownRuntime: async () => {
-        // Trigger nuke shutdown via SIGUSR1 signal
-        process.kill(process.pid, 'SIGUSR1');
+        // Prefer SIGUSR1 where available, but fall back safely to SIGTERM/process.exit.
+        let shutdownTriggered = false;
+
+        if (process.platform !== 'win32') {
+          try {
+            process.kill(process.pid, 'SIGUSR1');
+            shutdownTriggered = true;
+          } catch (error) {
+            logWarn?.(`Failed to send SIGUSR1 for runtime shutdown: ${getErrorMessage(error)}`);
+          }
+        }
+
+        if (!shutdownTriggered) {
+          try {
+            process.kill(process.pid, 'SIGTERM');
+            shutdownTriggered = true;
+          } catch (error) {
+            logWarn?.(`Failed to send SIGTERM for runtime shutdown: ${getErrorMessage(error)}`);
+          }
+        }
+
+        if (!shutdownTriggered) {
+          logWarn?.('Failed to trigger runtime shutdown via signals; exiting process directly.');
+          process.exit(1);
+        }
       },
       enqueueMessage: this.enqueueMessage,
       onAbortRequested: options.acpRuntime.requestManualAbort,

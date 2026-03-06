@@ -1,5 +1,5 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -24,9 +24,9 @@ echo "Project: $PROJECT_DIR"
 
 # Build if needed
 if [ ! -d "$PROJECT_DIR/dist" ]; then
-    echo "Building project..."
+    echo "Building project as $ACTUAL_USER..."
     cd "$PROJECT_DIR"
-    npm run build
+    sudo -u "$ACTUAL_USER" -H npm run build
 fi
 
 # Create service file from template
