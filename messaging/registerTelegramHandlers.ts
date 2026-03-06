@@ -4,7 +4,7 @@
  * (Telegram, Slack, Discord, etc.)
  */
 
-import { isAbortCommand, isAbortAllCommand, isShutdownCommand, isNukeCommand } from '../utils/commandText.js';
+import { isAbortCommand, isAbortAllCommand, isShutdownCommand } from '../utils/commandText.js';
 import { getErrorMessage } from '../utils/error.js';
 import { isUserAuthorized } from '../utils/telegramWhitelist.js';
 
@@ -17,7 +17,6 @@ type RegisterMessagingHandlersParams = {
   cancelActiveAcpPrompt: () => Promise<void>;
   cancelAllJobs: () => Promise<void>;
   shutdownAgent: () => Promise<void>;
-  shutdownRuntime: () => Promise<void>;
   enqueueMessage: (messageContext: any) => Promise<void>;
   onAbortRequested: () => void;
   onChatBound: (chatId: string) => void;
@@ -34,7 +33,6 @@ export function registerMessagingHandlers({
   cancelActiveAcpPrompt,
   cancelAllJobs,
   shutdownAgent,
-  shutdownRuntime,
   enqueueMessage,
   onAbortRequested,
   onChatBound,
@@ -93,19 +91,6 @@ export function registerMessagingHandlers({
       } catch (error) {
         logError('Error shutting down agent:', error);
         await messageContext.sendText('❌ Failed to shutdown agent.');
-      }
-      return;
-    }
-
-    if (isNukeCommand(messageContext.text)) {
-      await messageContext.sendText('💥 NUKE! Shutting down everything...');
-      try {
-        await shutdownAgent();
-        await shutdownRuntime();
-        await messageContext.sendText('💥 Everything shutdown. Bot will restart if monitored.');
-      } catch (error) {
-        logError('Error during nuke:', error);
-        await messageContext.sendText('❌ Nuke command failed.');
       }
       return;
     }

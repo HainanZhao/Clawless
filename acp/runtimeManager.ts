@@ -142,6 +142,12 @@ export function createAcpRuntime({
   };
 
   const shutdownAcpRuntime = async (reason: string) => {
+    // Clear prewarm retry timer
+    if (acpPrewarmRetryTimer) {
+      clearTimeout(acpPrewarmRetryTimer);
+      acpPrewarmRetryTimer = null;
+    }
+
     const processToStop = agentProcess;
     const runtimeSessionId = acpSessionId;
 

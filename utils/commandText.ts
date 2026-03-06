@@ -65,25 +65,7 @@ export function isShutdownCommand(text: unknown) {
     '/nuke',
     'nuke all',
     'nuke everything',
-  ]);
-  return commands.has(normalized);
-}
-
-export function isNukeCommand(text: unknown) {
-  const normalized = normalizeCommandText(text);
-  if (!normalized) {
-    return false;
-  }
-
-  const commands = new Set([
-    'nuke',
-    '/nuke',
-    'nuke all',
-    'kill all',
-    'shutdown all',
     '/killall',
-    'nuke everything',
-    'shutdown everything',
   ]);
   return commands.has(normalized);
 }

@@ -30,6 +30,7 @@ export class ClawlessApp {
   private semanticConversationMemory: SemanticConversationMemory;
   private lastIncomingChatId: string | null = null;
   private callbackChatStateFilePath: string;
+  private heartbeatInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     this.config = getConfig();
@@ -221,7 +222,7 @@ export class ClawlessApp {
       this.agentManager.scheduleAcpPrewarm('post-launch');
 
       if (this.config.HEARTBEAT_INTERVAL_MS > 0) {
-        setInterval(() => {
+        this.heartbeatInterval = setInterval(() => {
           const runtimeState = this.agentManager.getAcpRuntime().getRuntimeState();
           logInfo('Heartbeat', {
             queueLength: this.messagingInitializer.getQueueLengthValue(),
@@ -243,17 +244,21 @@ export class ClawlessApp {
       process.once(signal, async () => {
         const isNuke = signal === 'SIGUSR1';
         logInfo(`Received ${signal}, ${isNuke ? 'NUKE: ' : ''}stopping bot...`);
-        
+
+        // Clear heartbeat interval to allow clean exit
+        if (this.heartbeatInterval) {
+          clearInterval(this.heartbeatInterval);
+          this.heartbeatInterval = null;
+        }
+
         this.schedulerManager.shutdown();
         this.callbackServerManager.stop();
         this.messagingInitializer.stop(signal);
         
         await this.agentManager.shutdown(`signal:${signal}`);
-        
-        if (isNuke) {
-          logInfo('NUKE: Forcing immediate exit');
-          process.exit(0);
-        }
+
+        logInfo('Shutdown complete');
+        process.exit(0);
       });
     }
   }
