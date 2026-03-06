@@ -16,7 +16,6 @@ type CreateAcpRuntimeParams = {
   cliAgent: BaseCliAgent;
   acpPermissionStrategy: string;
   acpStreamStdout: boolean;
-  acpDebugStream: boolean;
   acpTimeoutMs: number;
   acpNoOutputTimeoutMs: number;
   acpPrewarmRetryMs: number;
@@ -63,10 +62,13 @@ export function createAcpRuntime({
   noOpAcpFileOperation,
   getErrorMessage,
   logInfo,
-}: Omit<CreateAcpRuntimeParams, 'acpDebugStream' | 'logError'>): AcpRuntime {
+  logError,
+}: CreateAcpRuntimeParams): AcpRuntime {
   const agentCommand = cliAgent.getCommand();
   const agentDisplayName = cliAgent.getDisplayName();
   const killGraceMs = cliAgent.getKillGraceMs();
+  const commandToken = agentCommand.split(/[\\/]/).pop() || agentCommand;
+  const stderrPrefixToken = commandToken.toLowerCase().replace(/\s+/g, '-');
 
   let agentProcess: any = null;
   let acpConnection: any = null;
@@ -256,19 +258,30 @@ export function createAcpRuntime({
         cwd: process.cwd(),
       });
 
+      logInfo(`Starting ${agentDisplayName} ACP process`, {
+        command: agentCommand,
+        pid: agentProcess.pid,
+      });
+
       agentProcess.stderr.on('data', (chunk: Buffer) => {
         const rawText = chunk.toString();
         appendAgentStderrTail(rawText);
+        const text = rawText.trim();
+        if (text) {
+          logError(`[${stderrPrefixToken}] ${text}`);
+        }
         if (activePromptCollector) {
           activePromptCollector.onActivity();
         }
       });
 
-      agentProcess.on('error', (_error: Error) => {
+      agentProcess.on('error', (error: Error) => {
+        logError(`${agentDisplayName} ACP process error:`, error.message);
         resetAcpRuntime();
       });
 
-      agentProcess.on('close', (_code: number, _signal: string) => {
+      agentProcess.on('close', (code: number, signal: string) => {
+        logError(`${agentDisplayName} ACP process closed (code=${code}, signal=${signal})`);
         resetAcpRuntime();
       });
 
@@ -290,6 +303,11 @@ export function createAcpRuntime({
         });
 
         acpSessionId = session.sessionId;
+
+        logInfo('ACP session ready', {
+          sessionId: acpSessionId,
+          mcpServersCount: mcpServers.length,
+        });
       } catch (error: any) {
         resetAcpRuntime();
         throw new Error(getErrorMessage(error));
@@ -315,10 +333,15 @@ export function createAcpRuntime({
     ensureAcpSession()
       .then(() => {
         acpPrewarmRetryAttempts = 0;
+        logInfo(`${agentDisplayName} ACP prewarm complete`);
       })
       .catch((_error: unknown) => {
         acpPrewarmRetryAttempts += 1;
         if (acpPrewarmMaxRetries > 0 && acpPrewarmRetryAttempts >= acpPrewarmMaxRetries) {
+          logInfo(`${agentDisplayName} ACP prewarm retries exhausted`, {
+            attempts: acpPrewarmRetryAttempts,
+            maxRetries: acpPrewarmMaxRetries,
+          });
           return;
         }
 
@@ -339,7 +362,6 @@ export function createAcpRuntime({
       let fullResponse = '';
       let isSettled = false;
       let noOutputTimeout: NodeJS.Timeout | null = null;
-
 
       const clearTimers = () => {
         clearTimeout(overallTimeout);
@@ -394,9 +416,6 @@ export function createAcpRuntime({
         onActivity: refreshNoOutputTimer,
         append: (textChunk: string) => {
           refreshNoOutputTimer();
-          if (!firstChunkAt) {
-            firstChunkAt = Date.now();
-          }
           fullResponse += textChunk;
           if (onChunk) {
             try {

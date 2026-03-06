@@ -73,6 +73,7 @@ export class AgentManager {
       noOpAcpFileOperation,
       getErrorMessage,
       logInfo,
+      logError,
     });
 
     this.agentInitialized = true;

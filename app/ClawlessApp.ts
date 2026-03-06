@@ -242,8 +242,7 @@ export class ClawlessApp {
 
     for (const signal of shutdownSignals) {
       process.once(signal, async () => {
-        const isNuke = signal === 'SIGUSR1';
-        logInfo(`Received ${signal}, ${isNuke ? 'NUKE: ' : ''}stopping bot...`);
+        logInfo(`Received ${signal}, stopping bot...`);
 
         // Clear heartbeat interval to allow clean exit
         if (this.heartbeatInterval) {
@@ -254,7 +253,7 @@ export class ClawlessApp {
         this.schedulerManager.shutdown();
         this.callbackServerManager.stop();
         this.messagingInitializer.stop(signal);
-        
+
         await this.agentManager.shutdown(`signal:${signal}`);
 
         logInfo('Shutdown complete');
