@@ -35,8 +35,6 @@ export class AgentManager {
       return;
     }
 
-    const agentCommand = this.getAgentCommand(this.config.CLI_AGENT);
-
     let cliAgentType: AgentType;
     try {
       cliAgentType = validateAgentType(this.config.CLI_AGENT);
@@ -46,6 +44,19 @@ export class AgentManager {
       process.exit(1);
     }
 
+    // Create agent instance first to get its default command
+    const tempAgent = createCliAgent(cliAgentType, {
+      approvalMode: this.config.CLI_AGENT_APPROVAL_MODE,
+      model: this.config.CLI_AGENT_MODEL,
+      includeDirectories: [this.config.CLAWLESS_HOME, os.homedir()],
+      killGraceMs: this.config.CLI_AGENT_KILL_GRACE_MS,
+      acpMcpServersJson: this.config.ACP_MCP_SERVERS_JSON,
+    });
+
+    // Use agent's default command, allowing config override
+    const agentCommand = tempAgent.getEffectiveCommand();
+
+    // Re-create with the resolved command
     this.cliAgent = createCliAgent(cliAgentType, {
       command: agentCommand,
       approvalMode: this.config.CLI_AGENT_APPROVAL_MODE,
@@ -78,17 +89,6 @@ export class AgentManager {
     });
 
     this.agentInitialized = true;
-  }
-
-  private getAgentCommand(cliAgent: string): string {
-    switch (cliAgent) {
-      case 'opencode':
-        return 'opencode';
-      case 'claude':
-        return 'claude-agent-acp';
-      default:
-        return 'gemini';
-    }
   }
 
   public validateCliAgentOrExit(): void {

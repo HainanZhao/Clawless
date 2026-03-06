@@ -7,7 +7,7 @@ import { getGeminiMcpServerNames, getGeminiMcpServersForAcp } from '../../utils/
  */
 export class GeminiAgent extends BaseCliAgent {
   getCommand(): string {
-    return this.config.command;
+    return this.config.command || 'gemini';
   }
 
   getDisplayName(): string {
