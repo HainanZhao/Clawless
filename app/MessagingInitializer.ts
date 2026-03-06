@@ -151,7 +151,8 @@ export class MessagingInitializer {
       cancelActiveAcpPrompt: options.acpRuntime.cancelActiveAcpPrompt,
       cancelAllJobs: options.cronScheduler.cancelAllJobs,
       shutdownAgent: async () => {
-        await options.agentManager.shutdown('Shutdown requested via command');
+        logInfo('Shutdown/nuke command received, triggering graceful shutdown...');
+        process.kill(process.pid, 'SIGTERM');
       },
       enqueueMessage: this.enqueueMessage,
       onAbortRequested: options.acpRuntime.requestManualAbort,
