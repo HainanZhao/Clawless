@@ -13,7 +13,7 @@
   "cliAgentApprovalMode": "yolo",
   "cliAgentModel": "",
   "acpPermissionStrategy": "allow_once",
-  "cliAgentTimeoutMs": 1200000,
+  "cliAgentTimeoutMs": 3600000,
   "cliAgentNoOutputTimeoutMs": 300000,
   "cliAgentKillGraceMs": 5000,
   "acpPrewarmRetryMs": 30000,

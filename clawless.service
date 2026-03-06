@@ -1,0 +1,39 @@
+[Unit]
+Description=Clawless - AI Agent Bridge for Telegram/Slack
+Documentation=https://github.com/HainanZhao/clawless
+After=network.target
+
+[Service]
+Type=simple
+User=%USER%
+Group=%GROUP%
+WorkingDirectory=%WORKDIR%
+
+# Choose ONE of the following ExecStart options:
+
+# Option 1: If clawless is installed globally via npm
+# ExecStart=/usr/bin/env clawless
+
+# Option 2: Run directly with node from project directory
+ExecStart=/usr/bin/env node dist/bin/cli.js
+
+# Environment
+EnvironmentFile=-%HOME%/.clawless/env
+Environment=NODE_ENV=production
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=clawless
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+
+# Graceful shutdown
+TimeoutStopSec=30
+KillMode=mixed
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

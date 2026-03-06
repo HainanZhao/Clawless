@@ -27,7 +27,7 @@ const configSchema = z.object({
   CLI_AGENT: z.string().default('gemini'),
   CLI_AGENT_APPROVAL_MODE: z.string().default('default'),
   CLI_AGENT_MODEL: z.string().default(''),
-  CLI_AGENT_TIMEOUT_MS: z.coerce.number().default(1200000),
+  CLI_AGENT_TIMEOUT_MS: z.coerce.number().default(3600000),
   CLI_AGENT_NO_OUTPUT_TIMEOUT_MS: z.coerce.number().default(900000),
   CLI_AGENT_KILL_GRACE_MS: z.coerce.number().default(5000),
   CLI_AGENT_MAX_RETRIES: z.coerce.number().default(3),
