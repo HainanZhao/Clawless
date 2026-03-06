@@ -4,7 +4,7 @@
  * (Telegram, Slack, Discord, etc.)
  */
 
-import { isAbortCommand, isAbortAllCommand, isShutdownCommand } from '../utils/commandText.js';
+import { isAbortCommand, isAbortAllCommand, isResetCommand, isShutdownCommand } from '../utils/commandText.js';
 import { getErrorMessage } from '../utils/error.js';
 import { isUserAuthorized } from '../utils/telegramWhitelist.js';
 
@@ -17,6 +17,7 @@ type RegisterMessagingHandlersParams = {
   cancelActiveAcpPrompt: () => Promise<void>;
   cancelAllJobs: () => Promise<void>;
   shutdownAgent: () => Promise<void>;
+  resetAgent: () => Promise<void>;
   enqueueMessage: (messageContext: any) => Promise<void>;
   onAbortRequested: () => void;
   onChatBound: (chatId: string) => void;
@@ -33,6 +34,7 @@ export function registerMessagingHandlers({
   cancelActiveAcpPrompt,
   cancelAllJobs,
   shutdownAgent,
+  resetAgent,
   enqueueMessage,
   onAbortRequested,
   onChatBound,
@@ -91,6 +93,18 @@ export function registerMessagingHandlers({
       } catch (error) {
         logError('Error shutting down agent:', error);
         await messageContext.sendText('❌ Failed to shutdown agent.');
+      }
+      return;
+    }
+
+    if (isResetCommand(messageContext.text)) {
+      await messageContext.sendText('🔄 Resetting CLI agent...');
+      try {
+        await resetAgent();
+        await messageContext.sendText('✅ CLI agent reset complete. The server is still running.');
+      } catch (error) {
+        logError('Error resetting agent:', error);
+        await messageContext.sendText('❌ Failed to reset agent.');
       }
       return;
     }

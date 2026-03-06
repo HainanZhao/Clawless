@@ -15,6 +15,7 @@ describe('registerTelegramHandlers', () => {
       cancelActiveAcpPrompt: async () => {},
       cancelAllJobs: async () => {},
       shutdownAgent: async () => {},
+      resetAgent: async () => {},
       enqueueMessage: async () => {},
       onAbortRequested: () => {},
       onChatBound: () => {},
