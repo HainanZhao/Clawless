@@ -237,15 +237,23 @@ export class ClawlessApp {
   }
 
   private setupGracefulShutdown(): void {
-    const shutdownSignals = ['SIGINT', 'SIGTERM'];
+    const shutdownSignals = ['SIGINT', 'SIGTERM', 'SIGUSR1'];
 
     for (const signal of shutdownSignals) {
-      process.once(signal, () => {
-        logInfo(`Received ${signal}, stopping bot...`);
+      process.once(signal, async () => {
+        const isNuke = signal === 'SIGUSR1';
+        logInfo(`Received ${signal}, ${isNuke ? 'NUKE: ' : ''}stopping bot...`);
+        
         this.schedulerManager.shutdown();
         this.callbackServerManager.stop();
         this.messagingInitializer.stop(signal);
-        void this.agentManager.shutdown(`signal:${signal}`);
+        
+        await this.agentManager.shutdown(`signal:${signal}`);
+        
+        if (isNuke) {
+          logInfo('NUKE: Forcing immediate exit');
+          process.exit(0);
+        }
       });
     }
   }

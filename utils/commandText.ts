@@ -58,6 +58,13 @@ export function isShutdownCommand(text: unknown) {
     'kill agent',
     'please shutdown',
     'shutdown the agent',
+    'shutdown all',
+    'kill all',
+    'shutdown everything',
+    'nuke',
+    '/nuke',
+    'nuke all',
+    'nuke everything',
   ]);
   return commands.has(normalized);
 }

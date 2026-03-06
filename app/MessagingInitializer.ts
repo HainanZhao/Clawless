@@ -154,8 +154,8 @@ export class MessagingInitializer {
         await options.agentManager.shutdown('Shutdown requested via command');
       },
       shutdownRuntime: async () => {
-        // Trigger graceful shutdown via SIGTERM signal
-        process.kill(process.pid, 'SIGTERM');
+        // Trigger nuke shutdown via SIGUSR1 signal
+        process.kill(process.pid, 'SIGUSR1');
       },
       enqueueMessage: this.enqueueMessage,
       onAbortRequested: options.acpRuntime.requestManualAbort,
