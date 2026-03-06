@@ -130,6 +130,15 @@ export class AgentManager {
     }
   }
 
+  public async resetAgent(reason: string): Promise<void> {
+    if (this.acpRuntime) {
+      await this.acpRuntime.shutdownAcpRuntime(reason);
+      // Re-initialize the agent for a fresh start
+      this.agentInitialized = false;
+      this.initializeAgent();
+    }
+  }
+
   public requestManualAbort(): void {
     if (this.acpRuntime) {
       this.acpRuntime.requestManualAbort();

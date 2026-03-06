@@ -154,6 +154,10 @@ export class MessagingInitializer {
         logInfo('Shutdown/nuke command received, triggering graceful shutdown...');
         process.kill(process.pid, 'SIGTERM');
       },
+      resetAgent: async () => {
+        logInfo('Reset command received, resetting CLI agent...');
+        await options.agentManager.resetAgent('user-reset-command');
+      },
       enqueueMessage: this.enqueueMessage,
       onAbortRequested: options.acpRuntime.requestManualAbort,
       onChatBound: (chatId) => {

@@ -70,6 +70,16 @@ export function isShutdownCommand(text: unknown) {
   return commands.has(normalized);
 }
 
+export function isResetCommand(text: unknown) {
+  const normalized = normalizeCommandText(text);
+  if (!normalized) {
+    return false;
+  }
+
+  const commands = new Set(['reset', '/reset', 'restart agent', 'reset agent', 'restart cli']);
+  return commands.has(normalized);
+}
+
 export function normalizeOutgoingText(text: unknown) {
   const rawText = String(text || '').trim();
   return stripThinkingProcess(rawText);
