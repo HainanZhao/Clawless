@@ -58,25 +58,14 @@ export function isShutdownCommand(text: unknown) {
     'kill agent',
     'please shutdown',
     'shutdown the agent',
-  ]);
-  return commands.has(normalized);
-}
-
-export function isNukeCommand(text: unknown) {
-  const normalized = normalizeCommandText(text);
-  if (!normalized) {
-    return false;
-  }
-
-  const commands = new Set([
+    'shutdown all',
+    'kill all',
+    'shutdown everything',
     'nuke',
     '/nuke',
     'nuke all',
-    'kill all',
-    'shutdown all',
-    '/killall',
     'nuke everything',
-    'shutdown everything',
+    '/killall',
   ]);
   return commands.has(normalized);
 }

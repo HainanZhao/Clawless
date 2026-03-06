@@ -30,6 +30,7 @@ export class ClawlessApp {
   private semanticConversationMemory: SemanticConversationMemory;
   private lastIncomingChatId: string | null = null;
   private callbackChatStateFilePath: string;
+  private heartbeatInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     this.config = getConfig();
@@ -221,7 +222,7 @@ export class ClawlessApp {
       this.agentManager.scheduleAcpPrewarm('post-launch');
 
       if (this.config.HEARTBEAT_INTERVAL_MS > 0) {
-        setInterval(() => {
+        this.heartbeatInterval = setInterval(() => {
           const runtimeState = this.agentManager.getAcpRuntime().getRuntimeState();
           logInfo('Heartbeat', {
             queueLength: this.messagingInitializer.getQueueLengthValue(),
@@ -237,15 +238,26 @@ export class ClawlessApp {
   }
 
   private setupGracefulShutdown(): void {
-    const shutdownSignals = ['SIGINT', 'SIGTERM'];
+    const shutdownSignals = ['SIGINT', 'SIGTERM', 'SIGUSR1'];
 
     for (const signal of shutdownSignals) {
-      process.once(signal, () => {
+      process.once(signal, async () => {
         logInfo(`Received ${signal}, stopping bot...`);
+
+        // Clear heartbeat interval to allow clean exit
+        if (this.heartbeatInterval) {
+          clearInterval(this.heartbeatInterval);
+          this.heartbeatInterval = null;
+        }
+
         this.schedulerManager.shutdown();
         this.callbackServerManager.stop();
         this.messagingInitializer.stop(signal);
-        void this.agentManager.shutdown(`signal:${signal}`);
+
+        await this.agentManager.shutdown(`signal:${signal}`);
+
+        logInfo('Shutdown complete');
+        process.exit(0);
       });
     }
   }

@@ -61,7 +61,6 @@ export class AgentManager {
       cliAgent: this.cliAgent,
       acpPermissionStrategy: this.config.ACP_PERMISSION_STRATEGY,
       acpStreamStdout: this.config.ACP_STREAM_STDOUT,
-      acpDebugStream: this.config.ACP_DEBUG_STREAM,
       acpTimeoutMs: this.config.CLI_AGENT_TIMEOUT_MS,
       acpNoOutputTimeoutMs: this.config.CLI_AGENT_NO_OUTPUT_TIMEOUT_MS,
       acpPrewarmRetryMs: this.config.ACP_PREWARM_RETRY_MS,

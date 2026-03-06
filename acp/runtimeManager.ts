@@ -16,7 +16,6 @@ type CreateAcpRuntimeParams = {
   cliAgent: BaseCliAgent;
   acpPermissionStrategy: string;
   acpStreamStdout: boolean;
-  acpDebugStream: boolean;
   acpTimeoutMs: number;
   acpNoOutputTimeoutMs: number;
   acpPrewarmRetryMs: number;
@@ -51,7 +50,6 @@ export function createAcpRuntime({
   cliAgent,
   acpPermissionStrategy,
   acpStreamStdout,
-  acpDebugStream,
   acpTimeoutMs,
   acpNoOutputTimeoutMs,
   acpPrewarmRetryMs,
@@ -68,9 +66,9 @@ export function createAcpRuntime({
 }: CreateAcpRuntimeParams): AcpRuntime {
   const agentCommand = cliAgent.getCommand();
   const agentDisplayName = cliAgent.getDisplayName();
+  const killGraceMs = cliAgent.getKillGraceMs();
   const commandToken = agentCommand.split(/[\\/]/).pop() || agentCommand;
   const stderrPrefixToken = commandToken.toLowerCase().replace(/\s+/g, '-');
-  const killGraceMs = cliAgent.getKillGraceMs();
 
   let agentProcess: any = null;
   let acpConnection: any = null;
@@ -91,8 +89,8 @@ export function createAcpRuntime({
 
   const terminateProcessGracefully = (
     childProcess: ChildProcessWithoutNullStreams,
-    processLabel: string,
-    details?: Record<string, unknown>,
+    _processLabel: string,
+    _details?: Record<string, unknown>,
   ) => {
     return new Promise<void>((resolve) => {
       if (!childProcess || childProcess.killed || childProcess.exitCode !== null) {
@@ -102,28 +100,16 @@ export function createAcpRuntime({
 
       let settled = false;
 
-      const finalize = (reason: string) => {
+      const finalize = (_reason: string) => {
         if (settled) {
           return;
         }
         settled = true;
-        logInfo(`${agentDisplayName} process termination finalized`, {
-          processLabel,
-          reason,
-          pid: childProcess.pid,
-          ...details,
-        });
         resolve();
       };
 
       childProcess.once('exit', () => finalize('exit'));
 
-      logInfo(`Sending SIGTERM to ${agentDisplayName} process`, {
-        processLabel,
-        pid: childProcess.pid,
-        graceMs: killGraceMs,
-        ...details,
-      });
       childProcess.kill('SIGTERM');
 
       setTimeout(
@@ -132,12 +118,6 @@ export function createAcpRuntime({
             finalize('already-exited');
             return;
           }
-
-          logInfo(`Escalating ${agentDisplayName} process termination to SIGKILL`, {
-            processLabel,
-            pid: childProcess.pid,
-            ...details,
-          });
 
           childProcess.kill('SIGKILL');
           finalize('sigkill');
@@ -164,6 +144,12 @@ export function createAcpRuntime({
   };
 
   const shutdownAcpRuntime = async (reason: string) => {
+    // Clear prewarm retry timer
+    if (acpPrewarmRetryTimer) {
+      clearTimeout(acpPrewarmRetryTimer);
+      acpPrewarmRetryTimer = null;
+    }
+
     const processToStop = agentProcess;
     const runtimeSessionId = acpSessionId;
 
@@ -203,14 +189,6 @@ export function createAcpRuntime({
 
       // Handle thinking/thought chunks (internal reasoning, not displayed to user)
       if (updateType === 'agent_thought_chunk') {
-        if (acpDebugStream) {
-          const thoughtText = params.update?.content?.text || '';
-          logInfo('ACP thought chunk', {
-            sessionId: acpSessionId,
-            thoughtLength: thoughtText.length,
-            thoughtPreview: thoughtText.slice(0, 100),
-          });
-        }
         return;
       }
 
@@ -236,7 +214,6 @@ export function createAcpRuntime({
   };
 
   const resetAcpRuntime = () => {
-    logInfo('Resetting ACP runtime state');
     void shutdownAcpRuntime('runtime-reset');
     scheduleAcpPrewarm('runtime reset');
   };
@@ -258,14 +235,10 @@ export function createAcpRuntime({
 
       // First, try to get MCP servers from the agent (e.g., from Gemini settings)
       let mcpServers: unknown[] = [];
-      let mcpServersSource = 'agent-config';
 
       const agentWithMcp = cliAgent as CliAgentWithMcp;
       if (typeof agentWithMcp.getMcpServersForAcp === 'function') {
         mcpServers = agentWithMcp.getMcpServersForAcp();
-        logInfo(`Using MCP servers from agent configuration`, {
-          count: mcpServers.length,
-        });
       }
 
       // Fall back to environment variable if agent didn't provide MCP servers
@@ -277,27 +250,17 @@ export function createAcpRuntime({
           invalidEnvMessage: 'Invalid ACP_MCP_SERVERS_JSON; using empty mcpServers array',
         });
         mcpServers = envResult.mcpServers;
-        mcpServersSource = envResult.source;
       }
 
-      const mcpServerNames = mcpServers
-        .map((server) => {
-          if (server && typeof server === 'object' && 'name' in server) {
-            return String((server as { name?: unknown }).name ?? '');
-          }
-
-          return '';
-        })
-        .filter((name) => name.length > 0);
-
-      logInfo(`Starting ${agentDisplayName} ACP process`, {
-        command: agentCommand,
-        args,
-      });
       agentStderrTail = '';
       agentProcess = spawn(agentCommand, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         cwd: process.cwd(),
+      });
+
+      logInfo(`Starting ${agentDisplayName} ACP process`, {
+        command: agentCommand,
+        pid: agentProcess.pid,
       });
 
       agentProcess.stderr.on('data', (chunk: Buffer) => {
@@ -331,11 +294,8 @@ export function createAcpRuntime({
       try {
         await acpConnection.initialize({
           protocolVersion: acp.PROTOCOL_VERSION,
-          // Omit fs capability entirely since we don't provide real filesystem access
-          // Declaring fs: {} causes some ACP servers (e.g., Qwen) to expect readTextFile/writeTextFile
           clientCapabilities: {},
         });
-        logInfo('ACP connection initialized');
 
         const session = await acpConnection.newSession({
           cwd: process.cwd(),
@@ -343,26 +303,14 @@ export function createAcpRuntime({
         });
 
         acpSessionId = session.sessionId;
+
         logInfo('ACP session ready', {
           sessionId: acpSessionId,
-          mcpServersMode: mcpServersSource,
           mcpServersCount: mcpServers.length,
-          mcpServerNames,
         });
       } catch (error: any) {
-        const baseMessage = getErrorMessage(error);
-        const isInternalError = baseMessage.includes('Internal error');
-        const hint = isInternalError
-          ? `${agentDisplayName} ACP newSession returned Internal error. This is often caused by a local MCP server or skill initialization issue. Try launching the CLI directly and checking MCP/skills diagnostics.`
-          : '';
-
-        logInfo('ACP initialization failed', {
-          error: baseMessage,
-          stderrTail: agentStderrTail || '(empty)',
-        });
-
         resetAcpRuntime();
-        throw new Error(hint ? `${baseMessage}. ${hint}` : baseMessage);
+        throw new Error(getErrorMessage(error));
       }
     })();
 
@@ -373,7 +321,7 @@ export function createAcpRuntime({
     }
   };
 
-  const scheduleAcpPrewarm = (reason: string) => {
+  const scheduleAcpPrewarm = (_reason: string) => {
     if (hasHealthyAcpRuntime() || acpInitPromise) {
       return;
     }
@@ -382,19 +330,15 @@ export function createAcpRuntime({
       return;
     }
 
-    logInfo('Triggering ACP prewarm', { reason });
-
     ensureAcpSession()
       .then(() => {
         acpPrewarmRetryAttempts = 0;
         logInfo(`${agentDisplayName} ACP prewarm complete`);
       })
-      .catch((error: unknown) => {
-        logInfo(`${agentDisplayName} ACP prewarm failed`, { error: getErrorMessage(error) });
-
+      .catch((_error: unknown) => {
         acpPrewarmRetryAttempts += 1;
         if (acpPrewarmMaxRetries > 0 && acpPrewarmRetryAttempts >= acpPrewarmMaxRetries) {
-          logInfo(`${agentDisplayName} ACP prewarm retries exhausted; stopping automatic retries`, {
+          logInfo(`${agentDisplayName} ACP prewarm retries exhausted`, {
             attempts: acpPrewarmRetryAttempts,
             maxRetries: acpPrewarmMaxRetries,
           });
@@ -412,21 +356,12 @@ export function createAcpRuntime({
 
   const runAcpPrompt = async (promptText: string, onChunk?: (chunk: string) => void) => {
     await ensureAcpSession();
-    const promptInvocationId = `acp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    logInfo('Starting ACP prompt', {
-      invocationId: promptInvocationId,
-      sessionId: acpSessionId,
-      promptLength: promptText.length,
-    });
     const promptForGemini = await buildPromptWithMemory(promptText);
 
     return new Promise<string>((resolve, reject) => {
       let fullResponse = '';
       let isSettled = false;
       let noOutputTimeout: NodeJS.Timeout | null = null;
-      const startedAt = Date.now();
-      let chunkCount = 0;
-      let firstChunkAt: number | null = null;
 
       const clearTimers = () => {
         clearTimeout(overallTimeout);
@@ -443,14 +378,6 @@ export function createAcpRuntime({
         manualAbortRequested = false;
         clearTimers();
         activePromptCollector = null;
-        logInfo('ACP prompt failed', {
-          invocationId: promptInvocationId,
-          sessionId: acpSessionId,
-          chunkCount,
-          firstChunkDelayMs: firstChunkAt ? firstChunkAt - startedAt : null,
-          elapsedMs: Date.now() - startedAt,
-          error: getErrorMessage(error),
-        });
         reject(error);
       };
 
@@ -462,14 +389,6 @@ export function createAcpRuntime({
         manualAbortRequested = false;
         clearTimers();
         activePromptCollector = null;
-        logInfo('ACP prompt completed', {
-          invocationId: promptInvocationId,
-          sessionId: acpSessionId,
-          chunkCount,
-          firstChunkDelayMs: firstChunkAt ? firstChunkAt - startedAt : null,
-          elapsedMs: Date.now() - startedAt,
-          responseLength: value.length,
-        });
         resolve(value);
       };
 
@@ -497,19 +416,6 @@ export function createAcpRuntime({
         onActivity: refreshNoOutputTimer,
         append: (textChunk: string) => {
           refreshNoOutputTimer();
-          chunkCount += 1;
-          if (!firstChunkAt) {
-            firstChunkAt = Date.now();
-          }
-          if (acpDebugStream) {
-            logInfo('ACP chunk received', {
-              invocationId: promptInvocationId,
-              chunkIndex: chunkCount,
-              chunkLength: textChunk.length,
-              elapsedMs: Date.now() - startedAt,
-              bufferLengthBeforeAppend: fullResponse.length,
-            });
-          }
           fullResponse += textChunk;
           if (onChunk) {
             try {
@@ -532,15 +438,6 @@ export function createAcpRuntime({
           ],
         })
         .then((result: any) => {
-          if (acpDebugStream) {
-            logInfo('ACP prompt stop reason', {
-              invocationId: promptInvocationId,
-              stopReason: result?.stopReason || '(none)',
-              chunkCount,
-              bufferedLength: fullResponse.length,
-              deliveryMode: 'live-preview-then-final',
-            });
-          }
           if (result?.stopReason === 'cancelled' && !fullResponse) {
             failOnce(
               new Error(
@@ -564,15 +461,10 @@ export function createAcpRuntime({
       return;
     }
 
-    logInfo('Appending context to ACP session', {
-      sessionId: acpSessionId,
-      textLength: text.length,
-    });
-
     const updatePrompt = `[SYSTEM: CONTEXT UPDATE]
-The following is the result of a background task you previously scheduled. 
-Please incorporate this into your current context. 
-DO NOT respond to this message now. 
+The following is the result of a background task you previously scheduled.
+Please incorporate this into your current context.
+DO NOT respond to this message now.
 DO NOT generate any visible output or message chunks.
 Acknowledge silently and wait for the next user input.
 
@@ -580,23 +472,13 @@ Result:
 ${text}`;
 
     try {
-      // We call prompt but we don't wait for a long response
-      // ACP prompt will usually return quickly if the agent is instructed not to respond
       void acpConnection
         .prompt({
           sessionId: acpSessionId,
           prompt: [{ type: 'text', text: updatePrompt }],
         })
-        .catch((error: any) => {
-          logInfo('Context update fire-and-forget failed', {
-            error: getErrorMessage(error),
-          });
-        });
-    } catch (error: any) {
-      logInfo('Failed to append context to ACP session', {
-        error: getErrorMessage(error),
-      });
-    }
+        .catch(() => {});
+    } catch (_) {}
   };
 
   return {
