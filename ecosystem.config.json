@@ -2,7 +2,8 @@
   "apps": [
     {
       "name": "clawless",
-      "script": "clawless",
+      "script": "bash",
+      "args": "-c 'clawless'",
       "interpreter": "none",
       "instances": 1,
       "exec_mode": "fork",
