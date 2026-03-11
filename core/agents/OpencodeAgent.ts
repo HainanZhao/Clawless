@@ -17,7 +17,7 @@ export class OpencodeAgent extends BaseCliAgent {
       args.push('-m', this.config.model);
     }
 
-    args.push(promptText);
+    args.push('--prompt', promptText);
     return args;
   }
 
