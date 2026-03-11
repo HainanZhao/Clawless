@@ -1,5 +1,5 @@
-import { getOpenCodeMcpServersForAcp } from '../../utils/opencodeMcpHelpers.js';
 import { BaseCliAgent, type CliAgentCapabilities } from './BaseCliAgent.js';
+import { getOpenCodeMcpServersForAcp } from '../../utils/opencodeMcpHelpers.js';
 
 /**
  * OpenCode CLI agent implementation.
